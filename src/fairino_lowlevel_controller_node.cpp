@@ -1,4 +1,4 @@
-#include "fairino_controller_node.hpp"
+#include "teleop_slave/fairino_lowlevel_controller_node.hpp"
 #include <chrono>
 #include <algorithm>
 #include <csignal>
@@ -6,12 +6,12 @@
 using namespace std::chrono_literals;
 
 FairinoControllerNode::FairinoControllerNode()
-    : Node("fairino_controller_node")
+    : Node("fairino_lowlevel_controller_node")
 {
-    this->declare_parameter("robot_ip", "192.168.58.2");
+    this->declare_parameter("robot_ip", "192.168.58.2");    
     robot_ip_ = this->get_parameter("robot_ip").as_string();
 
-    RCLCPP_INFO(this->get_logger(), "Fairino Controller Node");
+    RCLCPP_INFO(this->get_logger(), "Fairino Lowlevel Controller Node");
     RCLCPP_INFO(this->get_logger(), "  Robot IP: %s", robot_ip_.c_str());
 
     traj_sub_ = this->create_subscription<std_msgs::msg::Float64MultiArray>(
@@ -24,6 +24,15 @@ FairinoControllerNode::FairinoControllerNode()
     execute_srv_ = this->create_service<std_srvs::srv::Trigger>(
         "/execute_trajectory",
         std::bind(&FairinoControllerNode::executeTrajectoryService, this,
+                  std::placeholders::_1, std::placeholders::_2));
+
+    stream_sub_ = this->create_subscription<sensor_msgs::msg::JointState>(
+        "/servo_target", 10,
+        std::bind(&FairinoControllerNode::streamCallback, this, std::placeholders::_1));
+
+    stream_srv_ = this->create_service<std_srvs::srv::SetBool>(
+        "/enable_streaming",
+        std::bind(&FairinoControllerNode::streamService, this,
                   std::placeholders::_1, std::placeholders::_2));
 
     publish_timer_ = this->create_wall_timer(
@@ -48,6 +57,7 @@ void FairinoControllerNode::shutdown()
     RCLCPP_INFO(this->get_logger(), "안전 종료 시작...");
 
     executing_ = false;
+    stream_mode_ = false;
     std::this_thread::sleep_for(100ms);
 
     disconnectRobot();
@@ -98,8 +108,8 @@ void FairinoControllerNode::disconnectRobot()
 void FairinoControllerNode::trajectoryCallback(
     const std_msgs::msg::Float64MultiArray::SharedPtr msg)
 {
-    if (executing_) {
-        RCLCPP_WARN(this->get_logger(), "실행 중에 궤적 수신 무시");
+    if (executing_ || stream_mode_) {
+        RCLCPP_WARN(this->get_logger(), "실행 중이거나 스트리밍 중에는 궤적 수신을 무시합니다.");
         return;
     }
 
@@ -147,9 +157,9 @@ void FairinoControllerNode::executeTrajectoryService(
         return;
     }
 
-    if (executing_) {
+    if (executing_ || stream_mode_) {
         response->success = false;
-        response->message = "이미 실행 중입니다.";
+        response->message = "이미 실행 중이거나 스트리밍 중입니다.";
         return;
     }
 
@@ -309,6 +319,98 @@ bool FairinoControllerNode::executeServoJ(const std::vector<double>& target_deg)
     }
 
     return true;
+}
+
+// ============== Real-time Streaming ==============
+
+void FairinoControllerNode::streamCallback(const sensor_msgs::msg::JointState::SharedPtr msg)
+{
+    if (!stream_mode_ || msg->position.size() != NUM_JOINTS) return;
+
+    std::lock_guard<std::mutex> lock(stream_mutex_);
+    for (int i = 0; i < NUM_JOINTS; ++i) {
+        stream_target_deg_[i] = msg->position[i] * RAD_TO_DEG;
+    }
+}
+
+void FairinoControllerNode::streamService(
+    const std::shared_ptr<std_srvs::srv::SetBool::Request> request,
+    std::shared_ptr<std_srvs::srv::SetBool::Response> response)
+{
+    if (!connected_) {
+        response->success = false;
+        response->message = "로봇이 연결되지 않았습니다.";
+        return;
+    }
+
+    if (request->data) {
+        if (executing_) {
+            response->success = false;
+            response->message = "궤적 실행 중입니다.";
+            return;
+        }
+
+        if (!stream_mode_) {
+            robot_->ResetAllError();
+            std::this_thread::sleep_for(20ms);
+            robot_->Mode(0);
+            std::this_thread::sleep_for(20ms);
+            robot_->ServoMoveStart();
+            std::this_thread::sleep_for(50ms);
+
+            JointPos actual;
+            robot_->GetActualJointPosDegree(0, &actual);
+            {
+                std::lock_guard<std::mutex> lock(stream_mutex_);
+                stream_target_deg_.resize(NUM_JOINTS);
+                for (int i = 0; i < NUM_JOINTS; ++i) {
+                    stream_target_deg_[i] = actual.jPos[i];
+                }
+            }
+
+            stream_mode_ = true;
+            servo_error_count_.store(0);
+            std::thread(&FairinoControllerNode::streamLoop, this).detach();
+            RCLCPP_INFO(this->get_logger(), "스트리밍 모드 시작됨");
+        }
+        response->success = true;
+        response->message = "스트리밍 시작됨";
+    } else {
+        if (stream_mode_) {
+            stream_mode_ = false;
+            // The streamLoop will auto-end ServoMoveEnd when it exits the while loop
+            RCLCPP_INFO(this->get_logger(), "스트리밍 모드 중지 예약됨");
+        }
+        response->success = true;
+        response->message = "스트리밍 중지됨";
+    }
+}
+
+void FairinoControllerNode::streamLoop()
+{
+    auto period = std::chrono::duration<double, std::milli>(CONTROL_PERIOD_MS);
+
+    while (stream_mode_) {
+        auto start_time = std::chrono::steady_clock::now();
+
+        std::vector<double> target;
+        {
+            std::lock_guard<std::mutex> lock(stream_mutex_);
+            target = stream_target_deg_;
+        }
+
+        if(!executeServoJ(target)) {
+            RCLCPP_ERROR(this->get_logger(), "스트리밍 중 ServoJ 전송 실패. 스트리밍 종료.");
+            stream_mode_ = false;
+            break;
+        }
+
+        auto elapsed = std::chrono::steady_clock::now() - start_time;
+        if (elapsed < period) {
+            std::this_thread::sleep_for(period - elapsed);
+        }
+    }
+    robot_->ServoMoveEnd();
 }
 
 // ============== Joint State Publishing (50Hz) ==============

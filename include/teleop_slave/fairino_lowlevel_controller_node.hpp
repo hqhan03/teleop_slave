@@ -4,6 +4,7 @@
 #include <sensor_msgs/msg/joint_state.hpp>
 #include <std_msgs/msg/float64_multi_array.hpp>
 #include <std_srvs/srv/trigger.hpp>
+#include <std_srvs/srv/set_bool.hpp>
 
 #include <thread>
 #include <atomic>
@@ -33,6 +34,10 @@ private:
         std::shared_ptr<std_srvs::srv::Trigger::Response> response);
 
     void controlLoop();
+    void streamLoop();
+    void streamCallback(const sensor_msgs::msg::JointState::SharedPtr msg);
+    void streamService(const std::shared_ptr<std_srvs::srv::SetBool::Request> request,
+                       std::shared_ptr<std_srvs::srv::SetBool::Response> response);
     bool executeServoJ(const std::vector<double>& target_deg);
     void publishJointStates();
 
@@ -48,6 +53,8 @@ private:
     rclcpp::Subscription<std_msgs::msg::Float64MultiArray>::SharedPtr traj_sub_;
     rclcpp::Publisher<sensor_msgs::msg::JointState>::SharedPtr joint_pub_;
     rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr execute_srv_;
+    rclcpp::Subscription<sensor_msgs::msg::JointState>::SharedPtr stream_sub_;
+    rclcpp::Service<std_srvs::srv::SetBool>::SharedPtr stream_srv_;
     rclcpp::TimerBase::SharedPtr publish_timer_;
 
     // Trajectory data
@@ -57,6 +64,10 @@ private:
     std::atomic<bool> executing_{false};
     size_t current_traj_idx_{0};
 
+    // Streaming data
+    std::atomic<bool> stream_mode_{false};
+    std::mutex stream_mutex_;
+    std::vector<double> stream_target_deg_;
     // ServoJ error tracking
     std::atomic<int> servo_error_count_{0};
 
