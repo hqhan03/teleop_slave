@@ -20,7 +20,7 @@ struct HandDataPacket {
     uint32_t frame;
     float wristPos[3];
     float wristEuler[3];
-    float fingerFlexion[15];
+    float fingerFlexion[20]; // <-- 15에서 20으로 확장
 };
 #pragma pack(pop)
 
