@@ -21,10 +21,10 @@ ament_target_dependencies(master_bridge_node rclcpp geometry_msgs sensor_msgs)
 add_executable(fairino_lowlevel_controller_node src/fairino_lowlevel_controller_node.cpp)
 target_include_directories(fairino_lowlevel_controller_node PUBLIC 
   include
-  /home/hq/frcobot_ros2-main/fairino_hardware/libfairino/include
+  ${CMAKE_CURRENT_SOURCE_DIR}/libfairino/include
 )
 target_link_libraries(fairino_lowlevel_controller_node
-  /home/hq/frcobot_ros2-main/fairino_hardware/libfairino/lib/libfairino.so.2.3.3
+  ${CMAKE_CURRENT_SOURCE_DIR}/libfairino/lib/libfairino.so.2.3.3
 )
 ament_target_dependencies(fairino_lowlevel_controller_node rclcpp std_msgs sensor_msgs std_srvs)
 
@@ -46,6 +46,12 @@ install(TARGETS
 install(PROGRAMS
   scripts/curobo_mppi_solver.py
   DESTINATION lib/${PROJECT_NAME}
+)
+
+install(DIRECTORY
+  libfairino/lib/
+  DESTINATION lib
+  FILES_MATCHING PATTERN "*.so*"
 )
 
 ament_package()
