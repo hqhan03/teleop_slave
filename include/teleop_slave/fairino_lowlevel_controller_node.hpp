@@ -68,6 +68,10 @@ private:
     std::atomic<bool> stream_mode_{false};
     std::mutex stream_mutex_;
     std::vector<double> stream_target_deg_;
+
+    // Dummy mode for visualization
+    bool dummy_mode_{false};
+    std::vector<double> dummy_joint_positions_;
     // ServoJ error tracking
     std::atomic<int> servo_error_count_{0};
 

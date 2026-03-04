@@ -11,15 +11,20 @@ FairinoControllerNode::FairinoControllerNode()
     this->declare_parameter("robot_ip", "192.168.58.2");    
     robot_ip_ = this->get_parameter("robot_ip").as_string();
 
-    RCLCPP_INFO(this->get_logger(), "Fairino Lowlevel Controller Node");
+    this->declare_parameter("dummy_mode", false);
+    dummy_mode_ = this->get_parameter("dummy_mode").as_bool();
+
+    RCLCPP_INFO(this->get_logger(), "Fairino Controller Node");
     RCLCPP_INFO(this->get_logger(), "  Robot IP: %s", robot_ip_.c_str());
+    RCLCPP_INFO(this->get_logger(), "  Dummy Mode: %s", dummy_mode_ ? "TRUE (Simulation)" : "FALSE (Hardware)");
 
     traj_sub_ = this->create_subscription<std_msgs::msg::Float64MultiArray>(
         "/trajectory_points", 10,
         std::bind(&FairinoControllerNode::trajectoryCallback, this, std::placeholders::_1));
 
+    std::string joint_topic = dummy_mode_ ? "/joint_states" : "/robot_joint_states";
     joint_pub_ = this->create_publisher<sensor_msgs::msg::JointState>(
-        "/robot_joint_states", 10);
+        joint_topic, 10);
 
     execute_srv_ = this->create_service<std_srvs::srv::Trigger>(
         "/execute_trajectory",
@@ -67,6 +72,13 @@ void FairinoControllerNode::shutdown()
 
 bool FairinoControllerNode::connectRobot()
 {
+    if (dummy_mode_) {
+        RCLCPP_INFO(this->get_logger(), "Dummy Mode: 로봇 연결 우회됨 (Simulation)");
+        dummy_joint_positions_.resize(NUM_JOINTS, 0.0);
+        connected_ = true;
+        return true;
+    }
+
     RCLCPP_INFO(this->get_logger(), "로봇 연결 중... (%s)", robot_ip_.c_str());
 
     robot_ = std::make_unique<FRRobot>();
@@ -91,7 +103,15 @@ bool FairinoControllerNode::connectRobot()
 
 void FairinoControllerNode::disconnectRobot()
 {
-    if (!connected_ || !robot_) return;
+    if (!connected_) return;
+
+    if (dummy_mode_) {
+        connected_ = false;
+        RCLCPP_INFO(this->get_logger(), "Dummy Mode: 로봇 연결 해제됨");
+        return;
+    }
+
+    if (!robot_) return;
 
     RCLCPP_INFO(this->get_logger(), "로봇 연결 해제 중...");
 
@@ -188,7 +208,11 @@ void FairinoControllerNode::executeTrajectoryService(
             final_deg[i] = final_pt[i] * RAD_TO_DEG;
 
         JointPos actual_after;
-        robot_->GetActualJointPosDegree(0, &actual_after);
+        if (!dummy_mode_) {
+            robot_->GetActualJointPosDegree(0, &actual_after);
+        } else {
+            for(int i=0; i<NUM_JOINTS; ++i) actual_after.jPos[i] = dummy_joint_positions_[i];
+        }
 
         double loop_max_err = 0;
         for (int i = 0; i < NUM_JOINTS; ++i)
@@ -212,7 +236,11 @@ void FairinoControllerNode::executeTrajectoryService(
 
         while (true) {
             JointPos actual;
-            robot_->GetActualJointPosDegree(0, &actual);
+            if (!dummy_mode_) {
+                robot_->GetActualJointPosDegree(0, &actual);
+            } else {
+                for(int i=0; i<NUM_JOINTS; ++i) actual.jPos[i] = dummy_joint_positions_[i];
+            }
 
             double max_err = 0;
             for (int i = 0; i < NUM_JOINTS; ++i)
@@ -284,7 +312,17 @@ void FairinoControllerNode::controlLoop()
 
 bool FairinoControllerNode::executeServoJ(const std::vector<double>& target_deg)
 {
-    if (!robot_ || target_deg.size() != NUM_JOINTS) return false;
+    if (target_deg.size() != NUM_JOINTS) return false;
+
+    if (dummy_mode_) {
+        // Dummy execution immediately sets current state to target
+        for (int i = 0; i < NUM_JOINTS; ++i) {
+            dummy_joint_positions_[i] = target_deg[i];
+        }
+        return true;
+    }
+
+    if (!robot_) return false;
 
     JointPos current_actual;
     robot_->GetActualJointPosDegree(0, &current_actual);
@@ -351,15 +389,21 @@ void FairinoControllerNode::streamService(
         }
 
         if (!stream_mode_) {
-            robot_->ResetAllError();
-            std::this_thread::sleep_for(20ms);
-            robot_->Mode(0);
-            std::this_thread::sleep_for(20ms);
-            robot_->ServoMoveStart();
-            std::this_thread::sleep_for(50ms);
+            if (!dummy_mode_) {
+                robot_->ResetAllError();
+                std::this_thread::sleep_for(20ms);
+                robot_->Mode(0);
+                std::this_thread::sleep_for(20ms);
+                robot_->ServoMoveStart();
+                std::this_thread::sleep_for(50ms);
+            }
 
             JointPos actual;
-            robot_->GetActualJointPosDegree(0, &actual);
+            if (!dummy_mode_) {
+                robot_->GetActualJointPosDegree(0, &actual);
+            } else {
+                for(int i=0; i<NUM_JOINTS; ++i) actual.jPos[i] = dummy_joint_positions_[i];
+            }
             {
                 std::lock_guard<std::mutex> lock(stream_mutex_);
                 stream_target_deg_.resize(NUM_JOINTS);
@@ -417,14 +461,19 @@ void FairinoControllerNode::streamLoop()
 
 void FairinoControllerNode::publishJointStates()
 {
-    if (!connected_ || !robot_) return;
+    if (!connected_) return;
 
     JointPos jpos;
-    errno_t ret = robot_->GetActualJointPosDegree(0, &jpos);
-    if (ret != 0) {
-        RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 5000,
-            "GetActualJointPosDegree 실패: %d", ret);
-        return;
+    if (!dummy_mode_) {
+        if (!robot_) return;
+        errno_t ret = robot_->GetActualJointPosDegree(0, &jpos);
+        if (ret != 0) {
+            RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 5000,
+                "GetActualJointPosDegree 실패: %d", ret);
+            return;
+        }
+    } else {
+        for(int i=0; i<NUM_JOINTS; ++i) jpos.jPos[i] = dummy_joint_positions_[i];
     }
 
     bool all_zero = true;

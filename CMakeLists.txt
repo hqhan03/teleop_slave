@@ -54,4 +54,9 @@ install(DIRECTORY
   FILES_MATCHING PATTERN "*.so*"
 )
 
+install(DIRECTORY
+  launch
+  DESTINATION share/${PROJECT_NAME}
+)
+
 ament_package()
