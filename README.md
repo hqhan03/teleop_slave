@@ -20,7 +20,14 @@ This ROS 2 (Humble) package enables real-time teleoperation of a **Fairino FR5 m
 ### Prerequisites
 - Ubuntu 22.04 + ROS 2 Humble
 - NVIDIA GPU with CUDA Toolkit installed
-- **NVIDIA cuRobo** (Install instructions: [cuRobo Getting Started](https://curobo.org/get_started/1_install.html))
+- **NVIDIA cuRobo** (Must be installed in a Python Virtual Environment):
+  ```bash
+  sudo apt install python3.10-venv
+  python3 -m venv ~/curobo_env
+  source ~/curobo_env/bin/activate
+  pip install torch torchvision torchaudio
+  pip install curobo
+  ```
 - Fairino MoveIt2 config packages (`fairino5_v6_moveit2_config` for RViz visualization/robot description)
 
 ### Build
@@ -68,6 +75,7 @@ ros2 run teleop_slave master_bridge_node
 
 **Terminal 4: cuRobo MPPI Solver (Motion Generation)**
 ```bash
+source ~/curobo_env/bin/activate
 source ~/ros2_ws/install/setup.bash
 source ~/teleop_slave/install/setup.bash
 ros2 run teleop_slave curobo_mppi_solver.py
