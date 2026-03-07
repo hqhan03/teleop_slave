@@ -83,15 +83,15 @@ void ManusReceiverNode::publish_data(const HandDataPacket& packet) {
         packet.wristEuler[0], packet.wristEuler[1], packet.wristEuler[2]);
 
     printf("[Received UDP Data] Sending 20 Finger Joints...\n");
-    printf("  Thumb:  MCP_Sp=%.2f MCP_St=%.2f PIP=%.2f DIP=%.2f\n",
+    printf("  Thumb:  CMC_Fl/Ex=%.2f CMC_Ab/Ad=%.2f MCP_Fl/Ex=%.2f IP_Fl/Ex=%.2f\n",
         packet.fingerFlexion[0], packet.fingerFlexion[1], packet.fingerFlexion[2], packet.fingerFlexion[3]);
-    printf("  Index:  MCP_Sp=%.2f MCP_St=%.2f PIP=%.2f DIP=%.2f\n",
+    printf("  Index:  MCP_Ab/Ad=%.2f MCP_Fl/Ex=%.2f PIP_Fl/Ex=%.2f DIP_Fl/Ex=%.2f\n",
         packet.fingerFlexion[4], packet.fingerFlexion[5], packet.fingerFlexion[6], packet.fingerFlexion[7]);
-    printf("  Middle: MCP_Sp=%.2f MCP_St=%.2f PIP=%.2f DIP=%.2f\n",
+    printf("  Middle: MCP_Ab/Ad=%.2f MCP_Fl/Ex=%.2f PIP_Fl/Ex=%.2f DIP_Fl/Ex=%.2f\n",
         packet.fingerFlexion[8], packet.fingerFlexion[9], packet.fingerFlexion[10], packet.fingerFlexion[11]);
-    printf("  Ring:   MCP_Sp=%.2f MCP_St=%.2f PIP=%.2f DIP=%.2f\n",
+    printf("  Ring:   MCP_Ab/Ad=%.2f MCP_Fl/Ex=%.2f PIP_Fl/Ex=%.2f DIP_Fl/Ex=%.2f\n",
         packet.fingerFlexion[12], packet.fingerFlexion[13], packet.fingerFlexion[14], packet.fingerFlexion[15]);
-    printf("  Pinky:  MCP_Sp=%.2f MCP_St=%.2f PIP=%.2f DIP=%.2f\n",
+    printf("  Pinky:  MCP_Ab/Ad=%.2f MCP_Fl/Ex=%.2f PIP_Fl/Ex=%.2f DIP_Fl/Ex=%.2f\n",
         packet.fingerFlexion[16], packet.fingerFlexion[17], packet.fingerFlexion[18], packet.fingerFlexion[19]);
 }
 
