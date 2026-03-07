@@ -39,13 +39,23 @@ colcon build --packages-select teleop_slave --symlink-install
 source install/setup.bash
 ```
 
-## Running the Simulation in RViz
-You can verify the teleoperation pipeline works correctly using a simulated visualization (RViz). The simulation runs the underlying low-level controller in `dummy_mode`, meaning it bypasses the physical hardware connection attempts.
+## Running the Simulation in RViz (Fairino FR5)
+You can verify the teleoperation pipeline works correctly for the arm using a simulated visualization (RViz). The simulation runs the underlying low-level controller in `dummy_mode`, meaning it bypasses the physical hardware connection attempts.
 
 ```bash
 ros2 launch teleop_slave teleop_rviz.launch.py
 ```
 This launch file will only start `rviz2` and the `robot_state_publisher` for the `fairino5_v6` robot.
+
+## Running the Simulation in Gazebo (Tesollo DG-5F)
+To verify the complex 20-DOF finger mappings of the Tesollo gripper, you can run the official `dg5f_gz` package from the Tesollo repository.
+
+```bash
+# Launch the right-hand Gripper in Gazebo
+source ~/ros2_ws/install/setup.bash
+ros2 launch dg5f_gz dg5f_right_gz.launch.py
+```
+When running the `tesollo_slave_node`, ensure you append `--ros-args -p dummy_mode:=true` to automatically bypass the Modbus TCP and pipe the trajectory directly to the Gazebo controllers.
 
 ### Running the Nodes Individually (6 Terminals)
 For easier debugging and error checking during development, it is recommended to run each node in its own terminal.
