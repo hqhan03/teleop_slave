@@ -11,6 +11,7 @@ find_package(geometry_msgs REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(std_msgs REQUIRED)
 find_package(std_srvs REQUIRED)
+find_package(trajectory_msgs REQUIRED)
 find_package(tf2 REQUIRED)
 find_package(tf2_geometry_msgs REQUIRED)
 find_package(hardware_interface REQUIRED)
@@ -53,7 +54,11 @@ ament_target_dependencies(fairino_slave_node rclcpp geometry_msgs sensor_msgs st
 add_executable(tesollo_slave_node src/tesollo_slave_node.cpp)
 target_include_directories(tesollo_slave_node PUBLIC include libdelto/delto_tcp_comm/include)
 target_link_libraries(tesollo_slave_node delto_tcp_comm)
-ament_target_dependencies(tesollo_slave_node rclcpp sensor_msgs)
+ament_target_dependencies(tesollo_slave_node
+  rclcpp
+  sensor_msgs
+  trajectory_msgs
+)
 
 install(TARGETS
   master_bridge_node
