@@ -114,3 +114,11 @@ source ~/teleop_slave/install/setup.bash
 ros2 run teleop_slave tesollo_slave_node --ros-args -p dummy_mode:=true
 ```
 *(If you are connected to the physical DG-5F gripper, omit the `--ros-args -p dummy_mode:=true` argument. The default IP is `169.254.186.72` and Port is `502`. To change network settings, add `-p ip:="192.168.0.x" -p port:=502`)*
+
+**For Physical Hardware Connection:**
+```bash
+source ~/ros2_ws/install/setup.bash
+source ~/teleop_slave/install/setup.bash
+ros2 run teleop_slave tesollo_slave_node
+```
+*(To connect with a different IP/Port, use `ros2 run teleop_slave tesollo_slave_node --ros-args -p ip:="192.168.0.x" -p port:=502`)*
