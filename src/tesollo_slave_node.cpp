@@ -57,26 +57,30 @@ void TesolloSlaveNode::fingerJointsCallback(const sensor_msgs::msg::JointState::
     delto_target[3] = clamp_rad(msg->position[3], -90, 90);   // Motor 4: IP_Fl/Ex
 
     // Index (Motors 5-8)
-    delto_target[4] = -clamp_rad(msg->position[4], -20, 31);  // Motor 5: MCP_Ab/Ad (Sign Inversion)
+    // delto_target[4] = -clamp_rad(msg->position[4], -20, 31);  // Motor 5: MCP_Ab/Ad (Sign Inversion)
+    delto_target[4] = 0.0; // Temporarily disabled
     delto_target[5] = clamp_rad(msg->position[5], 0, 115);    // Motor 6: MCP_Fl/Ex
     delto_target[6] = clamp_rad(msg->position[6], -90, 90);   // Motor 7: PIP_Fl/Ex
     delto_target[7] = clamp_rad(msg->position[7], -90, 90);   // Motor 8: DIP_Fl/Ex
 
     // Middle (Motors 9-12)
-    delto_target[8] = -clamp_rad(msg->position[8], -30, 30);  // Motor 9: MCP_Ab/Ad (Sign Inversion)
+    // delto_target[8] = -clamp_rad(msg->position[8], -30, 30);  // Motor 9: MCP_Ab/Ad (Sign Inversion)
+    delto_target[8] = 0.0; // Temporarily disabled
     delto_target[9] = clamp_rad(msg->position[9], 0, 115);    // Motor 10: MCP_Fl/Ex
     delto_target[10] = clamp_rad(msg->position[10], -90, 90); // Motor 11: PIP_Fl/Ex
     delto_target[11] = clamp_rad(msg->position[11], -90, 90); // Motor 12: DIP_Fl/Ex
 
     // Ring (Motors 13-16)
-    delto_target[12] = -clamp_rad(msg->position[12], -32, 15);// Motor 13: MCP_Ab/Ad (Sign Inversion)
+    // delto_target[12] = -clamp_rad(msg->position[12], -32, 15);// Motor 13: MCP_Ab/Ad (Sign Inversion)
+    delto_target[12] = 0.0; // Temporarily disabled
     delto_target[13] = clamp_rad(msg->position[13], 0, 110);  // Motor 14: MCP_Fl/Ex
     delto_target[14] = clamp_rad(msg->position[14], -90, 90); // Motor 15: PIP_Fl/Ex
     delto_target[15] = clamp_rad(msg->position[15], -90, 90); // Motor 16: DIP_Fl/Ex
 
     // Pinky (Motors 17-20)
     delto_target[16] = clamp_rad(0.0, 0, 60);                 // Motor 17: Fixed (0.0 rad)
-    delto_target[17] = -clamp_rad(msg->position[16], -90, 15);// Motor 18: MCP_Ab/Ad (Sign Inversion)
+    // delto_target[17] = -clamp_rad(msg->position[16], -90, 15);// Motor 18: MCP_Ab/Ad (Sign Inversion)
+    delto_target[17] = 0.0; // Temporarily disabled
     delto_target[18] = clamp_rad(msg->position[17], -90, 90); // Motor 19: MCP_Fl/Ex
     
     // Combine Pinky PIP and DIP into the distal Motor 20
