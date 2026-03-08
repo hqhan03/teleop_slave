@@ -19,8 +19,8 @@
 struct HandDataPacket {
     uint32_t frame;
     float wristPos[3];
-    float wristEuler[3];
-    float fingerFlexion[20]; // <-- 15에서 20으로 확장
+    float wristQuaternion[4]; // w, x, y, z
+    float fingerFlexion[20];
 };
 #pragma pack(pop)
 
@@ -35,9 +35,7 @@ private:
     void receive_callback();
     void publish_data(const HandDataPacket& packet);
     
-    // 유틸리티
-    void set_quaternion_from_euler(geometry_msgs::msg::Quaternion& q, float r, float p, float y);
-
+    
     // 멤버 변수
     int sockfd_;
     rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr wrist_pub_;

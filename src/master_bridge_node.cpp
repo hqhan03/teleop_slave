@@ -53,7 +53,13 @@ void ManusReceiverNode::publish_data(const HandDataPacket& packet) {
     pose_msg.pose.position.x = packet.wristPos[0];
     pose_msg.pose.position.y = packet.wristPos[1];
     pose_msg.pose.position.z = packet.wristPos[2];
-    set_quaternion_from_euler(pose_msg.pose.orientation, packet.wristEuler[0], packet.wristEuler[1], packet.wristEuler[2]);
+    
+    // Assign quaternion directly: w, x, y, z
+    pose_msg.pose.orientation.w = packet.wristQuaternion[0];
+    pose_msg.pose.orientation.x = packet.wristQuaternion[1];
+    pose_msg.pose.orientation.y = packet.wristQuaternion[2];
+    pose_msg.pose.orientation.z = packet.wristQuaternion[3];
+    
     wrist_pub_->publish(pose_msg);
 
     // 2. 데이터 퍼블리시 (Finger Joints - 20개로 확장)
@@ -78,9 +84,9 @@ void ManusReceiverNode::publish_data(const HandDataPacket& packet) {
     // 3. 터미널 데이터 출력 (20개의 데이터 실시간 출력)
     printf("\033[2J\033[H");
     printf("=== [KAIST NREL] MANUS -> ROS2 Humble (UDP 50Hz) ===\n");
-    printf("[Wrist] Pos: X:%.3f Y:%.3f Z:%.3f | Euler: R:%.1f P:%.1f Y:%.1f\n",
+    printf("[Wrist] Pos: X:%.3f Y:%.3f Z:%.3f | Quat: W:%.3f X:%.3f Y:%.3f Z:%.3f\n",
         packet.wristPos[0], packet.wristPos[1], packet.wristPos[2], 
-        packet.wristEuler[0], packet.wristEuler[1], packet.wristEuler[2]);
+        packet.wristQuaternion[0], packet.wristQuaternion[1], packet.wristQuaternion[2], packet.wristQuaternion[3]);
 
     printf("[Received UDP Data] Sending 20 Finger Joints...\n");
     printf("  Thumb:  CMC_Fl/Ex=%.2f CMC_Ab/Ad=%.2f MCP_Fl/Ex=%.2f IP_Fl/Ex=%.2f\n",
@@ -95,20 +101,6 @@ void ManusReceiverNode::publish_data(const HandDataPacket& packet) {
         packet.fingerFlexion[16], packet.fingerFlexion[17], packet.fingerFlexion[18], packet.fingerFlexion[19]);
 }
 
-void ManusReceiverNode::set_quaternion_from_euler(geometry_msgs::msg::Quaternion& q, float r, float p, float y) {
-    float roll = r * M_PI / 180.0;
-    float pitch = p * M_PI / 180.0;
-    float yaw = y * M_PI / 180.0;
-
-    double cy = cos(yaw * 0.5), sy = sin(yaw * 0.5);
-    double cp = cos(pitch * 0.5), sp = sin(pitch * 0.5);
-    double cr = cos(roll * 0.5), sr = sin(roll * 0.5);
-
-    q.w = cr * cp * cy + sr * sp * sy;
-    q.x = sr * cp * cy - cr * sp * sy;
-    q.y = cr * sp * cy + sr * cp * sy;
-    q.z = cr * cp * sy - sr * sp * cy;
-}
 
 int main(int argc, char * argv[]) {
     rclcpp::init(argc, argv);
