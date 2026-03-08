@@ -51,10 +51,14 @@ void TesolloSlaveNode::fingerJointsCallback(const sensor_msgs::msg::JointState::
     };
 
     // Thumb (Motors 1-4)
-    delto_target[0] = -clamp_rad(msg->position[1], -76, 21);  // Motor 1: CMC_Ab/Ad (Sign Inversion)
-    delto_target[1] = -clamp_rad(msg->position[0], -154, -1); // Motor 2: CMC_Fl/Ex (Sign Inversion)
-    delto_target[2] = clamp_rad(msg->position[2], -89, 89);   // Motor 3: MCP_Fl/Ex
-    delto_target[3] = clamp_rad(msg->position[3], -89, 89);   // Motor 4: IP_Fl/Ex
+    // delto_target[0] = -clamp_rad(msg->position[1], -76, 21);  // Motor 1: CMC_Ab/Ad (Sign Inversion)
+    // delto_target[1] = -clamp_rad(msg->position[0], -154, -1); // Motor 2: CMC_Fl/Ex (Sign Inversion)
+    // delto_target[2] = clamp_rad(msg->position[2], -89, 89);   // Motor 3: MCP_Fl/Ex
+    // delto_target[3] = clamp_rad(msg->position[3], -89, 89);   // Motor 4: IP_Fl/Ex
+    delto_target[0] = 0.0;
+    delto_target[1] = 0.0;
+    delto_target[2] = 0.0;
+    delto_target[3] = 0.0;
 
     // Index (Motors 5-8)
     // delto_target[4] = -clamp_rad(msg->position[4], -19, 30);  // Motor 5: MCP_Ab/Ad (Sign Inversion)
