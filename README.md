@@ -106,19 +106,28 @@ ros2 run teleop_slave fairino_slave_node
 ```
 
 #### Terminal 6: Tesollo Slave Node (Gripper Hardware Interface)
-Maps the 20-DOF Manus finger positions directly to the Tesollo DG-5F Gripper via ModbusTCP.
+Maps the 20-DOF Manus finger positions to the Tesollo DG-5F Gripper.
+
 **For Gazebo Simulation (Hardware OFF):**
 ```bash
 source ~/ros2_ws/install/setup.bash
 source ~/teleop_slave/install/setup.bash
 ros2 run teleop_slave tesollo_slave_node --ros-args -p dummy_mode:=true
 ```
-*(If you are connected to the physical DG-5F gripper, omit the `--ros-args -p dummy_mode:=true` argument. The default IP is `169.254.186.72` and Port is `502`. To change network settings, add `-p ip:="192.168.0.x" -p port:=502`)*
 
 **For Physical Hardware Connection:**
+The physical Tesollo Gripper operates using a custom TCP protocol over `ros2_control`. You must launch the manufacturer's official ros2 driver first, and then run `tesollo_slave_node` to pipe the commanded positions to it.
+
+Terminal A: Start the official DG5F ros2_control driver
+```bash
+source ~/ros2_ws/install/setup.bash
+ros2 launch dg5f_driver dg5f_right_driver.launch.py delto_ip:=169.254.186.72 delto_port:=502
+```
+
+Terminal B: Run the teleoperation node (it will automatically publish to `/joint_trajectory_controller/joint_trajectory`)
 ```bash
 source ~/ros2_ws/install/setup.bash
 source ~/teleop_slave/install/setup.bash
 ros2 run teleop_slave tesollo_slave_node
 ```
-*(To connect with a different IP/Port, use `ros2 run teleop_slave tesollo_slave_node --ros-args -p ip:="192.168.0.x" -p port:=502`)*
+*(To connect with a different IP/Port, use `ros2 run teleop_slave tesollo_slave_node --ros-args -p ip:="169.254.186.72" -p port:=502`)*
