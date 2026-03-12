@@ -3,6 +3,8 @@
 #include <fcntl.h>
 #include <unistd.h>
 #include <cstdio> // printf 사용
+#include <tf2/LinearMath/Quaternion.h>
+#include <tf2/LinearMath/Matrix3x3.h>
 
 ManusReceiverNode::ManusReceiverNode() : Node("manus_receiver_cpp"), sockfd_(-1) {
     wrist_pub_ = this->create_publisher<geometry_msgs::msg::PoseStamped>("manus/wrist_pose", 10);
@@ -87,14 +89,32 @@ void ManusReceiverNode::publish_data(const HandDataPacket& packet) {
     joint_pub_->publish(joint_msg);
 
     // 3. 터미널 데이터 출력 (20개의 데이터 실시간 출력)
-    printf("\033[2J\033[H");
-    printf("=== [KAIST NREL] MANUS -> ROS2 Humble (UDP 50Hz) ===\n");
-    printf("[Wrist] Pos: X:%.3f Y:%.3f Z:%.3f | Quat: W:%.3f X:%.3f Y:%.3f Z:%.3f\n",
-        packet.wristPos[0], packet.wristPos[1], packet.wristPos[2], 
-        packet.wristQuaternion[0], packet.wristQuaternion[1], packet.wristQuaternion[2], packet.wristQuaternion[3]);
+    tf2::Quaternion q(
+        packet.wristQuaternion[1], // x
+        packet.wristQuaternion[2], // y
+        packet.wristQuaternion[3], // z
+        packet.wristQuaternion[0]  // w
+    );
+    tf2::Matrix3x3 m(q);
+    double roll, pitch, yaw;
+    m.getRPY(roll, pitch, yaw);
 
-    printf("[Received UDP Data] Sending 20 Finger Joints...\n");
-    printf("  Thumb:  MCPSpread=%.2f MCPStretch=%.2f PIPStretch=%.2f DIPStretch=%.2f\n",
+    // Convert radians to degrees for terminal print
+    double roll_deg = roll * 180.0 / M_PI;
+    double pitch_deg = pitch * 180.0 / M_PI;
+    double yaw_deg = yaw * 180.0 / M_PI;
+
+    printf("\033[2J\033[H");
+    printf("=== MANUS Core -> ROS2 Humble (UDP 50Hz) ===\n");
+    printf("[VIVE Tracker] Pos: X:%.3f Y:%.3f Z:%.3f\n",
+        packet.wristPos[0], packet.wristPos[1], packet.wristPos[2]);
+    printf("        Quat: W:%.3f X:%.3f Y:%.3f Z:%.3f\n",
+        packet.wristQuaternion[0], packet.wristQuaternion[1], packet.wristQuaternion[2], packet.wristQuaternion[3]);
+    printf("        Euler: R:%.3f P:%.3f Y:%.3f\n",
+        roll_deg, pitch_deg, yaw_deg);
+
+    printf("[MANUS] Sending 20 Finger Joints...\n");
+    printf("  Thumb:  CMC_Fl/Ex=%.2f CMC_Ab/Ad=%.2f MCP_Fl/Ex=%.2f IP_Fl/Ex=%.2f\n",
         packet.fingerFlexion[0], packet.fingerFlexion[1], packet.fingerFlexion[2], packet.fingerFlexion[3]);
     printf("  Index:  MCP_Ab/Ad=%.2f MCP_Fl/Ex=%.2f PIP_Fl/Ex=%.2f DIP_Fl/Ex=%.2f\n",
         packet.fingerFlexion[4], packet.fingerFlexion[5], packet.fingerFlexion[6], packet.fingerFlexion[7]);

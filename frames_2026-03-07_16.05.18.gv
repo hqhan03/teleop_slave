@@ -1,0 +1,35 @@
+digraph G {
+"rl_dg_palm" -> "rl_dg_1_1"[label=" Broadcaster: default_authority\nAverage rate: 20.2\nBuffer length: 5.0\nMost recent transform: 109.15\nOldest transform: 104.15\n"];
+"rl_dg_base" -> "rl_dg_palm"[label=" Broadcaster: default_authority\nAverage rate: 10000.0\nBuffer length: 0.0\nMost recent transform: 0.0\nOldest transform: 0.0\n"];
+"rl_dg_1_1" -> "rl_dg_1_2"[label=" Broadcaster: default_authority\nAverage rate: 20.2\nBuffer length: 5.0\nMost recent transform: 109.15\nOldest transform: 104.15\n"];
+"rl_dg_1_2" -> "rl_dg_1_3"[label=" Broadcaster: default_authority\nAverage rate: 20.2\nBuffer length: 5.0\nMost recent transform: 109.15\nOldest transform: 104.15\n"];
+"rl_dg_1_3" -> "rl_dg_1_4"[label=" Broadcaster: default_authority\nAverage rate: 20.2\nBuffer length: 5.0\nMost recent transform: 109.15\nOldest transform: 104.15\n"];
+"rl_dg_palm" -> "rl_dg_2_1"[label=" Broadcaster: default_authority\nAverage rate: 20.2\nBuffer length: 5.0\nMost recent transform: 109.15\nOldest transform: 104.15\n"];
+"rl_dg_2_1" -> "rl_dg_2_2"[label=" Broadcaster: default_authority\nAverage rate: 20.2\nBuffer length: 5.0\nMost recent transform: 109.15\nOldest transform: 104.15\n"];
+"rl_dg_2_2" -> "rl_dg_2_3"[label=" Broadcaster: default_authority\nAverage rate: 20.2\nBuffer length: 5.0\nMost recent transform: 109.15\nOldest transform: 104.15\n"];
+"rl_dg_2_3" -> "rl_dg_2_4"[label=" Broadcaster: default_authority\nAverage rate: 20.2\nBuffer length: 5.0\nMost recent transform: 109.15\nOldest transform: 104.15\n"];
+"rl_dg_palm" -> "rl_dg_3_1"[label=" Broadcaster: default_authority\nAverage rate: 20.2\nBuffer length: 5.0\nMost recent transform: 109.15\nOldest transform: 104.15\n"];
+"rl_dg_3_1" -> "rl_dg_3_2"[label=" Broadcaster: default_authority\nAverage rate: 20.2\nBuffer length: 5.0\nMost recent transform: 109.15\nOldest transform: 104.15\n"];
+"rl_dg_3_2" -> "rl_dg_3_3"[label=" Broadcaster: default_authority\nAverage rate: 20.2\nBuffer length: 5.0\nMost recent transform: 109.15\nOldest transform: 104.15\n"];
+"rl_dg_3_3" -> "rl_dg_3_4"[label=" Broadcaster: default_authority\nAverage rate: 20.2\nBuffer length: 5.0\nMost recent transform: 109.15\nOldest transform: 104.15\n"];
+"rl_dg_palm" -> "rl_dg_4_1"[label=" Broadcaster: default_authority\nAverage rate: 20.2\nBuffer length: 5.0\nMost recent transform: 109.15\nOldest transform: 104.15\n"];
+"rl_dg_4_1" -> "rl_dg_4_2"[label=" Broadcaster: default_authority\nAverage rate: 20.2\nBuffer length: 5.0\nMost recent transform: 109.15\nOldest transform: 104.15\n"];
+"rl_dg_4_2" -> "rl_dg_4_3"[label=" Broadcaster: default_authority\nAverage rate: 20.2\nBuffer length: 5.0\nMost recent transform: 109.15\nOldest transform: 104.15\n"];
+"rl_dg_4_3" -> "rl_dg_4_4"[label=" Broadcaster: default_authority\nAverage rate: 20.2\nBuffer length: 5.0\nMost recent transform: 109.15\nOldest transform: 104.15\n"];
+"rl_dg_palm" -> "rl_dg_5_1"[label=" Broadcaster: default_authority\nAverage rate: 20.2\nBuffer length: 5.0\nMost recent transform: 109.15\nOldest transform: 104.15\n"];
+"rl_dg_5_1" -> "rl_dg_5_2"[label=" Broadcaster: default_authority\nAverage rate: 20.2\nBuffer length: 5.0\nMost recent transform: 109.15\nOldest transform: 104.15\n"];
+"rl_dg_5_2" -> "rl_dg_5_3"[label=" Broadcaster: default_authority\nAverage rate: 20.2\nBuffer length: 5.0\nMost recent transform: 109.15\nOldest transform: 104.15\n"];
+"rl_dg_5_3" -> "rl_dg_5_4"[label=" Broadcaster: default_authority\nAverage rate: 20.2\nBuffer length: 5.0\nMost recent transform: 109.15\nOldest transform: 104.15\n"];
+"right_base_link" -> "rl_dg_mount"[label=" Broadcaster: default_authority\nAverage rate: 10000.0\nBuffer length: 0.0\nMost recent transform: 0.0\nOldest transform: 0.0\n"];
+"world" -> "right_base_link"[label=" Broadcaster: default_authority\nAverage rate: 10000.0\nBuffer length: 0.0\nMost recent transform: 0.0\nOldest transform: 0.0\n"];
+"rl_dg_1_4" -> "rl_dg_1_tip"[label=" Broadcaster: default_authority\nAverage rate: 10000.0\nBuffer length: 0.0\nMost recent transform: 0.0\nOldest transform: 0.0\n"];
+"rl_dg_2_4" -> "rl_dg_2_tip"[label=" Broadcaster: default_authority\nAverage rate: 10000.0\nBuffer length: 0.0\nMost recent transform: 0.0\nOldest transform: 0.0\n"];
+"rl_dg_3_4" -> "rl_dg_3_tip"[label=" Broadcaster: default_authority\nAverage rate: 10000.0\nBuffer length: 0.0\nMost recent transform: 0.0\nOldest transform: 0.0\n"];
+"rl_dg_4_4" -> "rl_dg_4_tip"[label=" Broadcaster: default_authority\nAverage rate: 10000.0\nBuffer length: 0.0\nMost recent transform: 0.0\nOldest transform: 0.0\n"];
+"rl_dg_5_4" -> "rl_dg_5_tip"[label=" Broadcaster: default_authority\nAverage rate: 10000.0\nBuffer length: 0.0\nMost recent transform: 0.0\nOldest transform: 0.0\n"];
+"rl_dg_mount" -> "rl_dg_base"[label=" Broadcaster: default_authority\nAverage rate: 10000.0\nBuffer length: 0.0\nMost recent transform: 0.0\nOldest transform: 0.0\n"];
+edge [style=invis];
+ subgraph cluster_legend { style=bold; color=black; label ="view_frames Result";
+"Recorded at time: 1772867118.7742932"[ shape=plaintext ] ;
+}->"world";
+}

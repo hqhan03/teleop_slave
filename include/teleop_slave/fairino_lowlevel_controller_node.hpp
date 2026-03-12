@@ -16,6 +16,9 @@
 
 #include "robot.h"
 
+#include <geometry_msgs/msg/pose_stamped.hpp>
+#include <tf2/LinearMath/Quaternion.h>
+
 class FairinoControllerNode : public rclcpp::Node {
 public:
     FairinoControllerNode();
@@ -52,6 +55,7 @@ private:
     // ROS2 interfaces
     rclcpp::Subscription<std_msgs::msg::Float64MultiArray>::SharedPtr traj_sub_;
     rclcpp::Publisher<sensor_msgs::msg::JointState>::SharedPtr joint_pub_;
+    rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr pose_pub_; // [추가] 실제 TCP 포즈 퍼블리셔
     rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr execute_srv_;
     rclcpp::Subscription<sensor_msgs::msg::JointState>::SharedPtr stream_sub_;
     rclcpp::Service<std_srvs::srv::SetBool>::SharedPtr stream_srv_;

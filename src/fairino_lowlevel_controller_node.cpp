@@ -26,6 +26,9 @@ FairinoControllerNode::FairinoControllerNode()
     joint_pub_ = this->create_publisher<sensor_msgs::msg::JointState>(
         joint_topic, 10);
 
+    pose_pub_ = this->create_publisher<geometry_msgs::msg::PoseStamped>(
+        "/robot_pose", 10);
+
     execute_srv_ = this->create_service<std_srvs::srv::Trigger>(
         "/execute_trajectory",
         std::bind(&FairinoControllerNode::executeTrajectoryService, this,
@@ -463,6 +466,9 @@ void FairinoControllerNode::publishJointStates()
 {
     if (!connected_) return;
 
+    // ==========================================
+    // 1. Joint State (관절 각도) 가져오기 및 발행
+    // ==========================================
     JointPos jpos;
     if (!dummy_mode_) {
         if (!robot_) return;
@@ -491,7 +497,7 @@ void FairinoControllerNode::publishJointStates()
         } else if (has_valid_joints_) {
             jpos = last_valid_joints_;
         } else {
-            return;
+            return; // 유효한 데이터가 없으면 중단
         }
     }
 
@@ -501,10 +507,49 @@ void FairinoControllerNode::publishJointStates()
     msg.position.resize(NUM_JOINTS);
 
     for (int i = 0; i < NUM_JOINTS; ++i) {
-        msg.position[i] = jpos.jPos[i] * DEG_TO_RAD;
+        msg.position[i] = jpos.jPos[i] * DEG_TO_RAD; // Degree to Radian
     }
 
     joint_pub_->publish(msg);
+
+
+    // ==========================================
+    // 2. [추가됨] TCP Pose (말단 장치 위치) 가져오기 및 발행
+    // ==========================================
+    if (!dummy_mode_ && robot_ && pose_pub_) {
+        DescPose tcp_pose;
+        // 0: 차단 모드 (또는 1: 비차단 모드)로 현재 TCP 위치 요청
+        errno_t ret_pose = robot_->GetActualTCPPose(0, &tcp_pose); 
+        
+        if (ret_pose == 0) {
+            geometry_msgs::msg::PoseStamped pose_msg;
+            pose_msg.header.stamp = this->now();
+            pose_msg.header.frame_id = "base_link"; // fr5.yml의 base_link 이름과 맞춤
+
+            // 위치 변환: Fairino SDK는 mm 단위이므로 m 단위로 변환
+            pose_msg.pose.position.x = tcp_pose.tran.x / 1000.0;
+            pose_msg.pose.position.y = tcp_pose.tran.y / 1000.0;
+            pose_msg.pose.position.z = tcp_pose.tran.z / 1000.0;
+
+            // 회전 변환: Euler Degree -> Quaternion
+            tf2::Quaternion q;
+            q.setRPY(
+                tcp_pose.rpy.rx * M_PI / 180.0, 
+                tcp_pose.rpy.ry * M_PI / 180.0, 
+                tcp_pose.rpy.rz * M_PI / 180.0
+            );
+
+            pose_msg.pose.orientation.x = q.x();
+            pose_msg.pose.orientation.y = q.y();
+            pose_msg.pose.orientation.z = q.z();
+            pose_msg.pose.orientation.w = q.w();
+
+            pose_pub_->publish(pose_msg);
+        } else {
+            RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 5000,
+                "GetActualTCPPose 실패: %d", ret_pose);
+        }
+    }
 }
 
 // ============== Main ==============

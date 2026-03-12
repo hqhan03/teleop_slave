@@ -36,7 +36,7 @@ pluginlib_export_plugin_description_file(hardware_interface delto_hardware.xml)
 
 add_executable(master_bridge_node src/master_bridge_node.cpp)
 target_include_directories(master_bridge_node PUBLIC include)
-ament_target_dependencies(master_bridge_node rclcpp geometry_msgs sensor_msgs)
+ament_target_dependencies(master_bridge_node rclcpp geometry_msgs sensor_msgs tf2)
 
 add_executable(fairino_lowlevel_controller_node src/fairino_lowlevel_controller_node.cpp)
 target_include_directories(fairino_lowlevel_controller_node PUBLIC 
@@ -46,11 +46,15 @@ target_include_directories(fairino_lowlevel_controller_node PUBLIC
 target_link_libraries(fairino_lowlevel_controller_node
   ${CMAKE_CURRENT_SOURCE_DIR}/libfairino/lib/libfairino.so.2.3.3
 )
-ament_target_dependencies(fairino_lowlevel_controller_node rclcpp std_msgs sensor_msgs std_srvs)
+ament_target_dependencies(fairino_lowlevel_controller_node rclcpp std_msgs sensor_msgs std_srvs geometry_msgs tf2 tf2_geometry_msgs)
 
 add_executable(fairino_slave_node src/fairino_slave_node.cpp)
 target_include_directories(fairino_slave_node PUBLIC include)
 ament_target_dependencies(fairino_slave_node rclcpp geometry_msgs sensor_msgs std_srvs tf2 tf2_geometry_msgs)
+
+add_executable(fairino_state_printer_node src/fairino_state_printer_node.cpp)
+target_include_directories(fairino_state_printer_node PUBLIC include)
+ament_target_dependencies(fairino_state_printer_node rclcpp sensor_msgs geometry_msgs tf2 tf2_geometry_msgs)
 
 add_executable(tesollo_slave_node src/tesollo_slave_node.cpp)
 target_include_directories(tesollo_slave_node PUBLIC include libdelto/delto_tcp_comm/include)
@@ -67,6 +71,7 @@ install(TARGETS
   fairino_lowlevel_controller_node
   fairino_slave_node
   tesollo_slave_node
+  fairino_state_printer_node
   DESTINATION lib/${PROJECT_NAME})
 
 install(PROGRAMS
