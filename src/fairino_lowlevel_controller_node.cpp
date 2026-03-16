@@ -1,33 +1,59 @@
 #include "teleop_slave/fairino_lowlevel_controller_node.hpp"
-#include <chrono>
+
 #include <algorithm>
+#include <chrono>
 #include <csignal>
+#include <sstream>
+
+#include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
+
+#include "teleop_slave/fr5_teleop_utils.hpp"
 
 using namespace std::chrono_literals;
 
 FairinoControllerNode::FairinoControllerNode()
-    : Node("fairino_lowlevel_controller_node")
-{
-    this->declare_parameter("robot_ip", "192.168.58.2");    
-    robot_ip_ = this->get_parameter("robot_ip").as_string();
-
+    : Node("fairino_lowlevel_controller_node") {
+    this->declare_parameter("robot_ip", "192.168.58.2");
     this->declare_parameter("dummy_mode", false);
+    this->declare_parameter("expected_tcp_id", -1);
+    this->declare_parameter("expected_wobj_id", -1);
+    this->declare_parameter("ik_failure_limit", 5);
+    this->declare_parameter("ik_failure_timeout_sec", 0.75);
+    this->declare_parameter("allow_orientation_fallback", true);
+    this->declare_parameter("ik_position_backoff_steps", 4);
+    this->declare_parameter("pose_target_timeout_sec", 0.30);
+    this->declare_parameter("servo_cmd_period_sec", 0.008);
+    this->declare_parameter("servoj_max_step_deg", 2.0);
+    this->declare_parameter("servoj_failure_limit", 3);
+
+    robot_ip_ = this->get_parameter("robot_ip").as_string();
     dummy_mode_ = this->get_parameter("dummy_mode").as_bool();
+    servo_cmd_period_sec_ = this->get_parameter("servo_cmd_period_sec").as_double();
+    servoj_max_step_deg_ = this->get_parameter("servoj_max_step_deg").as_double();
+    servoj_failure_limit_ = this->get_parameter("servoj_failure_limit").as_int();
 
     RCLCPP_INFO(this->get_logger(), "Fairino Controller Node");
     RCLCPP_INFO(this->get_logger(), "  Robot IP: %s", robot_ip_.c_str());
     RCLCPP_INFO(this->get_logger(), "  Dummy Mode: %s", dummy_mode_ ? "TRUE (Simulation)" : "FALSE (Hardware)");
+    RCLCPP_INFO(this->get_logger(), "  ServoJ cmd period: %.4f s", servo_cmd_period_sec_);
+    RCLCPP_INFO(this->get_logger(), "  ServoJ max step: %.2f deg", servoj_max_step_deg_);
+    RCLCPP_INFO(this->get_logger(), "  ServoJ failure limit: %d", servoj_failure_limit_);
 
     traj_sub_ = this->create_subscription<std_msgs::msg::Float64MultiArray>(
         "/trajectory_points", 10,
         std::bind(&FairinoControllerNode::trajectoryCallback, this, std::placeholders::_1));
 
-    std::string joint_topic = dummy_mode_ ? "/joint_states" : "/robot_joint_states";
-    joint_pub_ = this->create_publisher<sensor_msgs::msg::JointState>(
-        joint_topic, 10);
+    pose_target_sub_ = this->create_subscription<geometry_msgs::msg::PoseStamped>(
+        "/fr5/pose_target", 10,
+        std::bind(&FairinoControllerNode::poseTargetCallback, this, std::placeholders::_1));
 
-    pose_pub_ = this->create_publisher<geometry_msgs::msg::PoseStamped>(
-        "/robot_pose", 10);
+    legacy_pose_target_sub_ = this->create_subscription<geometry_msgs::msg::PoseStamped>(
+        "/curobo/pose_target", 10,
+        std::bind(&FairinoControllerNode::poseTargetCallback, this, std::placeholders::_1));
+
+    const std::string joint_topic = dummy_mode_ ? "/joint_states" : "/robot_joint_states";
+    joint_pub_ = this->create_publisher<sensor_msgs::msg::JointState>(joint_topic, 10);
+    pose_pub_ = this->create_publisher<geometry_msgs::msg::PoseStamped>("/robot_pose", 10);
 
     execute_srv_ = this->create_service<std_srvs::srv::Trigger>(
         "/execute_trajectory",
@@ -45,24 +71,27 @@ FairinoControllerNode::FairinoControllerNode()
 
     publish_timer_ = this->create_wall_timer(
         20ms, std::bind(&FairinoControllerNode::publishJointStates, this));
+
+    dummy_robot_pose_.header.frame_id = "base_link";
+    dummy_robot_pose_.pose.orientation.w = 1.0;
+    last_successful_ik_time_ = this->now();
 }
 
-FairinoControllerNode::~FairinoControllerNode()
-{
+FairinoControllerNode::~FairinoControllerNode() {
     shutdown();
 }
 
-bool FairinoControllerNode::initialize()
-{
+bool FairinoControllerNode::initialize() {
     return connectRobot();
 }
 
-void FairinoControllerNode::shutdown()
-{
-    if (shutdown_done_) return;
+void FairinoControllerNode::shutdown() {
+    if (shutdown_done_) {
+        return;
+    }
     shutdown_done_ = true;
 
-    RCLCPP_INFO(this->get_logger(), "안전 종료 시작...");
+    RCLCPP_INFO(this->get_logger(), "Starting safe shutdown...");
 
     executing_ = false;
     stream_mode_ = false;
@@ -70,25 +99,23 @@ void FairinoControllerNode::shutdown()
 
     disconnectRobot();
 
-    RCLCPP_INFO(this->get_logger(), "안전 종료 완료");
+    RCLCPP_INFO(this->get_logger(), "Safe shutdown complete");
 }
 
-bool FairinoControllerNode::connectRobot()
-{
+bool FairinoControllerNode::connectRobot() {
     if (dummy_mode_) {
-        RCLCPP_INFO(this->get_logger(), "Dummy Mode: 로봇 연결 우회됨 (Simulation)");
         dummy_joint_positions_.resize(NUM_JOINTS, 0.0);
         connected_ = true;
+        RCLCPP_INFO(this->get_logger(), "Dummy mode enabled. Hardware connection skipped.");
         return true;
     }
 
-    RCLCPP_INFO(this->get_logger(), "로봇 연결 중... (%s)", robot_ip_.c_str());
+    robot_ = CreateFairinoRobotSdkAdapter();
+    RCLCPP_INFO(this->get_logger(), "Connecting to Fairino controller at %s", robot_ip_.c_str());
 
-    robot_ = std::make_unique<FRRobot>();
-    int ret = robot_->RPC(robot_ip_.c_str());
+    const errno_t ret = robot_->RPC(robot_ip_.c_str());
     if (ret != 0) {
-        RCLCPP_ERROR(this->get_logger(),
-            "로봇 연결 실패 (IP: %s, Error: %d)", robot_ip_.c_str(), ret);
+        RCLCPP_ERROR(this->get_logger(), "Failed to connect to robot controller (ret=%d)", ret);
         robot_.reset();
         return false;
     }
@@ -99,51 +126,77 @@ bool FairinoControllerNode::connectRobot()
     robot_->RobotEnable(1);
     robot_->SetSpeed(20);
 
-    connected_ = true;
-    RCLCPP_INFO(this->get_logger(), "로봇 연결 성공: %s", robot_ip_.c_str());
+    connected_ = validateControllerState();
+    if (!connected_) {
+        disconnectRobot();
+        return false;
+    }
+
+    RCLCPP_INFO(this->get_logger(),
+                "Connected to %s. Verify alarms, payload, TCP, and workobject in the web UI at http://192.168.58.2",
+                robot_ip_.c_str());
     return true;
 }
 
-void FairinoControllerNode::disconnectRobot()
-{
-    if (!connected_) return;
+bool FairinoControllerNode::validateControllerState() {
+    teleop_slave::ControllerValidationResult validation = teleop_slave::ValidateControllerState(
+        *robot_,
+        this->get_parameter("expected_tcp_id").as_int(),
+        this->get_parameter("expected_wobj_id").as_int());
 
-    if (dummy_mode_) {
-        connected_ = false;
-        RCLCPP_INFO(this->get_logger(), "Dummy Mode: 로봇 연결 해제됨");
+    int maincode = 0;
+    int subcode = 0;
+    robot_->GetRobotErrorCode(&maincode, &subcode);
+
+    if (!validation.ok) {
+        RCLCPP_ERROR(this->get_logger(), "Controller validation failed: %s",
+                     validation.message.c_str());
+        return false;
+    }
+
+    RCLCPP_INFO(this->get_logger(),
+                "Controller state validated: %s | error(main=%d, sub=%d) | mode set to automatic in node",
+                validation.message.c_str(), maincode, subcode);
+    return true;
+}
+
+void FairinoControllerNode::disconnectRobot() {
+    if (!connected_ && !robot_) {
         return;
     }
 
-    if (!robot_) return;
+    if (dummy_mode_) {
+        connected_ = false;
+        RCLCPP_INFO(this->get_logger(), "Dummy mode disconnected");
+        return;
+    }
 
-    RCLCPP_INFO(this->get_logger(), "로봇 연결 해제 중...");
+    if (!robot_) {
+        return;
+    }
 
     robot_->ServoMoveEnd();
     robot_->RobotEnable(0);
     robot_->CloseRPC();
 
     connected_ = false;
-    RCLCPP_INFO(this->get_logger(), "로봇 연결 해제 완료");
+    robot_.reset();
+    RCLCPP_INFO(this->get_logger(), "Disconnected from Fairino controller");
 }
 
-// ============== Trajectory Reception ==============
-
 void FairinoControllerNode::trajectoryCallback(
-    const std_msgs::msg::Float64MultiArray::SharedPtr msg)
-{
+    const std_msgs::msg::Float64MultiArray::SharedPtr msg) {
     if (executing_ || stream_mode_) {
-        RCLCPP_WARN(this->get_logger(), "실행 중이거나 스트리밍 중에는 궤적 수신을 무시합니다.");
+        RCLCPP_WARN(this->get_logger(), "Ignoring trajectory input while executing or streaming.");
         return;
     }
 
     std::lock_guard<std::mutex> lock(traj_mutex_);
     trajectory_queue_.clear();
 
-    size_t n_points = msg->data.size() / NUM_JOINTS;
-
+    const size_t n_points = msg->data.size() / NUM_JOINTS;
     if (msg->data.size() % NUM_JOINTS != 0 || n_points == 0) {
-        RCLCPP_ERROR(this->get_logger(),
-            "잘못된 궤적 데이터 크기: %zu (6의 배수여야 함)", msg->data.size());
+        RCLCPP_ERROR(this->get_logger(), "Invalid trajectory payload size: %zu", msg->data.size());
         return;
     }
 
@@ -158,139 +211,122 @@ void FairinoControllerNode::trajectoryCallback(
     trajectory_loaded_ = true;
     current_traj_idx_ = 0;
 
-    RCLCPP_INFO(this->get_logger(), "궤적 수신: %zu 포인트 (%.1f초 @ 250Hz)",
-        n_points, n_points / CONTROL_FREQUENCY_HZ);
+    RCLCPP_INFO(this->get_logger(), "Loaded trajectory with %zu points", n_points);
 }
 
-// ============== Trajectory Execution ==============
+void FairinoControllerNode::poseTargetCallback(
+    const geometry_msgs::msg::PoseStamped::SharedPtr msg) {
+    {
+        std::lock_guard<std::mutex> lock(pose_target_mutex_);
+        latest_pose_target_ = *msg;
+        latest_pose_target_arrival_ = this->now();
+        pose_target_received_ = true;
+        pose_target_stream_active_ = true;
+    }
+
+    if (dummy_mode_) {
+        dummy_robot_pose_ = *msg;
+        dummy_robot_pose_.header.stamp = this->now();
+    }
+
+    if (!stream_mode_ || !connected_) {
+        return;
+    }
+
+    if (dummy_mode_) {
+        return;
+    }
+
+    teleop_slave::PoseIkOptions options;
+    options.expected_tcp_id = this->get_parameter("expected_tcp_id").as_int();
+    options.expected_wobj_id = this->get_parameter("expected_wobj_id").as_int();
+    options.allow_orientation_fallback =
+        this->get_parameter("allow_orientation_fallback").as_bool();
+    options.position_backoff_steps =
+        this->get_parameter("ik_position_backoff_steps").as_int();
+
+    const auto result = teleop_slave::SolvePoseTargetIK(*robot_, *msg, options);
+    if (!result.success) {
+        consecutive_ik_failures_++;
+        RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 1000,
+                             "Pose target IK rejected: %s", result.message.c_str());
+        const double ik_failure_timeout_sec =
+            this->get_parameter("ik_failure_timeout_sec").as_double();
+        const bool exceeded_count =
+            consecutive_ik_failures_ >= this->get_parameter("ik_failure_limit").as_int();
+        const bool exceeded_time =
+            (this->now() - last_successful_ik_time_).seconds() >= ik_failure_timeout_sec;
+        if (exceeded_count && exceeded_time) {
+            RCLCPP_ERROR(this->get_logger(),
+                         "IK failure limit reached for %.2f seconds. Holding last valid target stopped the arm as a safety fallback.",
+                         (this->now() - last_successful_ik_time_).seconds());
+            stream_mode_ = false;
+        }
+        return;
+    }
+
+    consecutive_ik_failures_ = 0;
+    last_successful_ik_time_ = this->now();
+    std::lock_guard<std::mutex> lock(stream_mutex_);
+    stream_target_deg_.resize(NUM_JOINTS);
+    for (int i = 0; i < NUM_JOINTS; ++i) {
+        stream_target_deg_[i] = result.joint_target_deg[i];
+    }
+}
 
 void FairinoControllerNode::executeTrajectoryService(
     const std::shared_ptr<std_srvs::srv::Trigger::Request>,
-    std::shared_ptr<std_srvs::srv::Trigger::Response> response)
-{
+    std::shared_ptr<std_srvs::srv::Trigger::Response> response) {
     if (!connected_) {
         response->success = false;
-        response->message = "로봇이 연결되지 않았습니다.";
+        response->message = "Robot is not connected.";
         return;
     }
 
     if (!trajectory_loaded_ || trajectory_queue_.empty()) {
         response->success = false;
-        response->message = "궤적이 로드되지 않았습니다.";
+        response->message = "No trajectory loaded.";
         return;
     }
 
     if (executing_ || stream_mode_) {
         response->success = false;
-        response->message = "이미 실행 중이거나 스트리밍 중입니다.";
+        response->message = "Trajectory execution or streaming is already active.";
         return;
     }
 
     executing_ = true;
     current_traj_idx_ = 0;
     servo_error_count_.store(0);
+    consecutive_servoj_failures_ = 0;
 
-    size_t n_points = trajectory_queue_.size();
-    RCLCPP_INFO(this->get_logger(), "궤적 실행 시작: %zu 포인트", n_points);
+    if (!dummy_mode_) {
+        robot_->ResetAllError();
+        std::this_thread::sleep_for(20ms);
+        robot_->Mode(0);
+        std::this_thread::sleep_for(20ms);
+        robot_->ServoMoveStart();
+        std::this_thread::sleep_for(50ms);
+    }
 
-    robot_->ResetAllError();
-    std::this_thread::sleep_for(20ms);
-    robot_->Mode(0);
-    std::this_thread::sleep_for(20ms);
-
-    robot_->ServoMoveStart();
-    std::this_thread::sleep_for(50ms);
-
-    std::thread([this, n_points]() {
+    std::thread([this]() {
         controlLoop();
-
-        // 진단: 루프 종료 직후 실제 위치 vs 목표 비교
-        auto& final_pt = trajectory_queue_.back();  // rad
-        std::vector<double> final_deg(NUM_JOINTS);
-        for (int i = 0; i < NUM_JOINTS; ++i)
-            final_deg[i] = final_pt[i] * RAD_TO_DEG;
-
-        JointPos actual_after;
-        if (!dummy_mode_) {
-            robot_->GetActualJointPosDegree(0, &actual_after);
-        } else {
-            for(int i=0; i<NUM_JOINTS; ++i) actual_after.jPos[i] = dummy_joint_positions_[i];
+        if (!dummy_mode_ && robot_) {
+            robot_->ServoMoveEnd();
         }
-
-        double loop_max_err = 0;
-        for (int i = 0; i < NUM_JOINTS; ++i)
-            loop_max_err = std::max(loop_max_err,
-                std::abs(final_deg[i] - actual_after.jPos[i]));
-
-        RCLCPP_INFO(this->get_logger(),
-            "루프 종료 | 목표(deg): [%.1f, %.1f, %.1f, %.1f, %.1f, %.1f]",
-            final_deg[0], final_deg[1], final_deg[2],
-            final_deg[3], final_deg[4], final_deg[5]);
-        RCLCPP_INFO(this->get_logger(),
-            "루프 종료 | 실제(deg): [%.1f, %.1f, %.1f, %.1f, %.1f, %.1f] (max_err=%.2f)",
-            actual_after.jPos[0], actual_after.jPos[1], actual_after.jPos[2],
-            actual_after.jPos[3], actual_after.jPos[4], actual_after.jPos[5],
-            loop_max_err);
-
-        // 수렴 대기: 로봇이 최종 목표에 도달할 때까지 ServoJ 계속 전송
-        constexpr double CONVERGE_THRESHOLD_DEG = 0.5;
-        constexpr int    MAX_WAIT_MS = 5000;
-        auto wait_start = std::chrono::steady_clock::now();
-
-        while (true) {
-            JointPos actual;
-            if (!dummy_mode_) {
-                robot_->GetActualJointPosDegree(0, &actual);
-            } else {
-                for(int i=0; i<NUM_JOINTS; ++i) actual.jPos[i] = dummy_joint_positions_[i];
-            }
-
-            double max_err = 0;
-            for (int i = 0; i < NUM_JOINTS; ++i)
-                max_err = std::max(max_err,
-                    std::abs(final_deg[i] - actual.jPos[i]));
-
-            if (max_err < CONVERGE_THRESHOLD_DEG) {
-                RCLCPP_INFO(this->get_logger(),
-                    "수렴 완료: max_err=%.2f deg", max_err);
-                break;
-            }
-
-            auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
-                std::chrono::steady_clock::now() - wait_start).count();
-
-            if (elapsed_ms > MAX_WAIT_MS) {
-                RCLCPP_WARN(this->get_logger(),
-                    "수렴 타임아웃 (%.2f deg, %lld ms)", max_err, (long long)elapsed_ms);
-                break;
-            }
-
-            executeServoJ(final_deg);
-            std::this_thread::sleep_for(std::chrono::milliseconds(4));
-        }
-
-        robot_->ServoMoveEnd();
-
-        int errs = servo_error_count_.load();
-        if (errs > 0) {
-            RCLCPP_WARN(this->get_logger(),
-                "실행 중 ServoJ 오류: %d / %zu 포인트", errs, n_points);
-        }
-
         executing_ = false;
-        RCLCPP_INFO(this->get_logger(), "궤적 실행 완료");
+        RCLCPP_INFO(this->get_logger(), "Trajectory execution complete");
     }).detach();
 
     response->success = true;
-    response->message = "궤적 실행 시작됨";
+    response->message = "Trajectory execution started";
 }
 
-void FairinoControllerNode::controlLoop()
-{
-    auto period = std::chrono::duration<double, std::milli>(CONTROL_PERIOD_MS);
+void FairinoControllerNode::controlLoop() {
+    const auto period = std::chrono::duration<double>(servo_cmd_period_sec_);
 
     while (executing_ && current_traj_idx_ < trajectory_queue_.size()) {
-        auto start_time = std::chrono::steady_clock::now();
+        const auto start_time = std::chrono::steady_clock::now();
 
         std::vector<double> point;
         {
@@ -306,55 +342,57 @@ void FairinoControllerNode::controlLoop()
         executeServoJ(joints_deg);
         current_traj_idx_++;
 
-        auto elapsed = std::chrono::steady_clock::now() - start_time;
+        const auto elapsed = std::chrono::steady_clock::now() - start_time;
         if (elapsed < period) {
             std::this_thread::sleep_for(period - elapsed);
         }
     }
 }
 
-bool FairinoControllerNode::executeServoJ(const std::vector<double>& target_deg)
-{
-    if (target_deg.size() != NUM_JOINTS) return false;
+bool FairinoControllerNode::executeServoJ(const std::vector<double>& target_deg) {
+    if (target_deg.size() != NUM_JOINTS) {
+        return false;
+    }
 
     if (dummy_mode_) {
-        // Dummy execution immediately sets current state to target
         for (int i = 0; i < NUM_JOINTS; ++i) {
             dummy_joint_positions_[i] = target_deg[i];
         }
         return true;
     }
 
-    if (!robot_) return false;
+    if (!robot_) {
+        return false;
+    }
 
     JointPos current_actual;
     robot_->GetActualJointPosDegree(0, &current_actual);
 
-    static constexpr double SERVOJ_MAX_STEP_DEG = 2.0;
-
     JointPos cmd;
     for (int i = 0; i < NUM_JOINTS; ++i) {
-        double error = target_deg[i] - current_actual.jPos[i];
-        double step = std::clamp(error, -SERVOJ_MAX_STEP_DEG, SERVOJ_MAX_STEP_DEG);
+        const double error = target_deg[i] - current_actual.jPos[i];
+        const double step = std::clamp(error, -servoj_max_step_deg_, servoj_max_step_deg_);
         cmd.jPos[i] = current_actual.jPos[i] + step;
     }
 
     ExaxisPos epos(0, 0, 0, 0);
-    float t = static_cast<float>(CONTROL_PERIOD_MS / 1000.0);
+    const float t = static_cast<float>(servo_cmd_period_sec_);
 
-    errno_t ret = robot_->ServoJ(&cmd, &epos, 0.0f, 0.0f, t, 0.0f, 0.0f, 0);
-
+    const errno_t ret = robot_->ServoJ(&cmd, &epos, 0.0f, 0.0f, t, 0.0f, 0.0f, 0);
     if (ret != 0) {
-        int err_cnt = servo_error_count_.fetch_add(1) + 1;
-
+        const int err_cnt = servo_error_count_.fetch_add(1) + 1;
         if (err_cnt <= 3 || err_cnt % 100 == 0) {
-            int maincode = 0, subcode = 0;
+            int maincode = 0;
+            int subcode = 0;
             robot_->GetRobotErrorCode(&maincode, &subcode);
             RCLCPP_WARN(this->get_logger(),
-                "ServoJ 오류 (cnt=%d): ret=%d, main=%d, sub=%d",
-                err_cnt, ret, maincode, subcode);
+                        "ServoJ failed (count=%d, ret=%d, main=%d, sub=%d)",
+                        err_cnt, ret, maincode, subcode);
+            if (ret == 14) {
+                RCLCPP_WARN(this->get_logger(),
+                            "ret=14 is a Fairino interface execution failure. Common causes are controller mode/enable mismatch, active alarms, or an unsupported ServoJ cycle time.");
+            }
         }
-
         robot_->ResetAllError();
         return false;
     }
@@ -362,13 +400,13 @@ bool FairinoControllerNode::executeServoJ(const std::vector<double>& target_deg)
     return true;
 }
 
-// ============== Real-time Streaming ==============
-
-void FairinoControllerNode::streamCallback(const sensor_msgs::msg::JointState::SharedPtr msg)
-{
-    if (!stream_mode_ || msg->position.size() != NUM_JOINTS) return;
+void FairinoControllerNode::streamCallback(const sensor_msgs::msg::JointState::SharedPtr msg) {
+    if (!stream_mode_ || msg->position.size() != NUM_JOINTS) {
+        return;
+    }
 
     std::lock_guard<std::mutex> lock(stream_mutex_);
+    pose_target_stream_active_ = false;
     for (int i = 0; i < NUM_JOINTS; ++i) {
         stream_target_deg_[i] = msg->position[i] * RAD_TO_DEG;
     }
@@ -376,18 +414,17 @@ void FairinoControllerNode::streamCallback(const sensor_msgs::msg::JointState::S
 
 void FairinoControllerNode::streamService(
     const std::shared_ptr<std_srvs::srv::SetBool::Request> request,
-    std::shared_ptr<std_srvs::srv::SetBool::Response> response)
-{
+    std::shared_ptr<std_srvs::srv::SetBool::Response> response) {
     if (!connected_) {
         response->success = false;
-        response->message = "로봇이 연결되지 않았습니다.";
+        response->message = "Robot is not connected.";
         return;
     }
 
     if (request->data) {
         if (executing_) {
             response->success = false;
-            response->message = "궤적 실행 중입니다.";
+            response->message = "Trajectory execution is active.";
             return;
         }
 
@@ -405,8 +442,11 @@ void FairinoControllerNode::streamService(
             if (!dummy_mode_) {
                 robot_->GetActualJointPosDegree(0, &actual);
             } else {
-                for(int i=0; i<NUM_JOINTS; ++i) actual.jPos[i] = dummy_joint_positions_[i];
+                for (int i = 0; i < NUM_JOINTS; ++i) {
+                    actual.jPos[i] = dummy_joint_positions_[i];
+                }
             }
+
             {
                 std::lock_guard<std::mutex> lock(stream_mutex_);
                 stream_target_deg_.resize(NUM_JOINTS);
@@ -415,30 +455,43 @@ void FairinoControllerNode::streamService(
                 }
             }
 
+            consecutive_ik_failures_ = 0;
+            last_successful_ik_time_ = this->now();
+            pose_target_stream_active_ = false;
             stream_mode_ = true;
             servo_error_count_.store(0);
+            consecutive_servoj_failures_ = 0;
             std::thread(&FairinoControllerNode::streamLoop, this).detach();
-            RCLCPP_INFO(this->get_logger(), "스트리밍 모드 시작됨");
+            RCLCPP_INFO(this->get_logger(), "Streaming mode enabled");
         }
+
         response->success = true;
-        response->message = "스트리밍 시작됨";
-    } else {
-        if (stream_mode_) {
-            stream_mode_ = false;
-            // The streamLoop will auto-end ServoMoveEnd when it exits the while loop
-            RCLCPP_INFO(this->get_logger(), "스트리밍 모드 중지 예약됨");
-        }
-        response->success = true;
-        response->message = "스트리밍 중지됨";
+        response->message = "Streaming enabled";
+        return;
     }
+
+    stream_mode_ = false;
+    response->success = true;
+    response->message = "Streaming disabled";
 }
 
-void FairinoControllerNode::streamLoop()
-{
-    auto period = std::chrono::duration<double, std::milli>(CONTROL_PERIOD_MS);
+void FairinoControllerNode::streamLoop() {
+    const auto period = std::chrono::duration<double>(servo_cmd_period_sec_);
+    const double timeout_sec = this->get_parameter("pose_target_timeout_sec").as_double();
 
     while (stream_mode_) {
-        auto start_time = std::chrono::steady_clock::now();
+        const auto start_time = std::chrono::steady_clock::now();
+
+        if (pose_target_stream_active_ && pose_target_received_) {
+            const rclcpp::Duration age = this->now() - latest_pose_target_arrival_;
+            if (timeout_sec > 0.0 && age.seconds() > timeout_sec) {
+                RCLCPP_ERROR(this->get_logger(),
+                             "Pose target stream timed out after %.3f seconds. Stopping stream.",
+                             age.seconds());
+                stream_mode_ = false;
+                break;
+            }
+        }
 
         std::vector<double> target;
         {
@@ -446,40 +499,54 @@ void FairinoControllerNode::streamLoop()
             target = stream_target_deg_;
         }
 
-        if(!executeServoJ(target)) {
-            RCLCPP_ERROR(this->get_logger(), "스트리밍 중 ServoJ 전송 실패. 스트리밍 종료.");
-            stream_mode_ = false;
-            break;
+        if (!executeServoJ(target)) {
+            consecutive_servoj_failures_++;
+            if (consecutive_servoj_failures_ >= servoj_failure_limit_) {
+                RCLCPP_ERROR(this->get_logger(),
+                             "ServoJ streaming failed %d times in a row. Stopping stream.",
+                             consecutive_servoj_failures_);
+                stream_mode_ = false;
+                break;
+            }
+            RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 1000,
+                                 "Transient ServoJ failure (%d/%d). Retrying.",
+                                 consecutive_servoj_failures_, servoj_failure_limit_);
+        } else {
+            consecutive_servoj_failures_ = 0;
         }
 
-        auto elapsed = std::chrono::steady_clock::now() - start_time;
+        const auto elapsed = std::chrono::steady_clock::now() - start_time;
         if (elapsed < period) {
             std::this_thread::sleep_for(period - elapsed);
         }
     }
-    robot_->ServoMoveEnd();
+
+    if (!dummy_mode_ && robot_) {
+        robot_->ServoMoveEnd();
+    }
 }
 
-// ============== Joint State Publishing (50Hz) ==============
+void FairinoControllerNode::publishJointStates() {
+    if (!connected_) {
+        return;
+    }
 
-void FairinoControllerNode::publishJointStates()
-{
-    if (!connected_) return;
-
-    // ==========================================
-    // 1. Joint State (관절 각도) 가져오기 및 발행
-    // ==========================================
     JointPos jpos;
     if (!dummy_mode_) {
-        if (!robot_) return;
-        errno_t ret = robot_->GetActualJointPosDegree(0, &jpos);
+        if (!robot_) {
+            return;
+        }
+
+        const errno_t ret = robot_->GetActualJointPosDegree(0, &jpos);
         if (ret != 0) {
             RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 5000,
-                "GetActualJointPosDegree 실패: %d", ret);
+                                 "GetActualJointPosDegree failed: %d", ret);
             return;
         }
     } else {
-        for(int i=0; i<NUM_JOINTS; ++i) jpos.jPos[i] = dummy_joint_positions_[i];
+        for (int i = 0; i < NUM_JOINTS; ++i) {
+            jpos.jPos[i] = dummy_joint_positions_[i];
+        }
     }
 
     if (!dummy_mode_) {
@@ -497,67 +564,47 @@ void FairinoControllerNode::publishJointStates()
         } else if (has_valid_joints_) {
             jpos = last_valid_joints_;
         } else {
-            return; // 유효한 데이터가 없으면 중단
+            return;
         }
     }
 
-    sensor_msgs::msg::JointState msg;
-    msg.header.stamp = this->now();
-    msg.name = joint_names_;
-    msg.position.resize(NUM_JOINTS);
-
+    sensor_msgs::msg::JointState joint_msg;
+    joint_msg.header.stamp = this->now();
+    joint_msg.name = joint_names_;
+    joint_msg.position.resize(NUM_JOINTS);
     for (int i = 0; i < NUM_JOINTS; ++i) {
-        msg.position[i] = jpos.jPos[i] * DEG_TO_RAD; // Degree to Radian
+        joint_msg.position[i] = jpos.jPos[i] * DEG_TO_RAD;
+    }
+    joint_pub_->publish(joint_msg);
+
+    if (dummy_mode_) {
+        dummy_robot_pose_.header.stamp = this->now();
+        pose_pub_->publish(dummy_robot_pose_);
+        return;
     }
 
-    joint_pub_->publish(msg);
-
-
-    // ==========================================
-    // 2. [추가됨] TCP Pose (말단 장치 위치) 가져오기 및 발행
-    // ==========================================
-    if (!dummy_mode_ && robot_ && pose_pub_) {
-        DescPose tcp_pose;
-        // 0: 차단 모드 (또는 1: 비차단 모드)로 현재 TCP 위치 요청
-        errno_t ret_pose = robot_->GetActualTCPPose(0, &tcp_pose); 
-        
-        if (ret_pose == 0) {
-            geometry_msgs::msg::PoseStamped pose_msg;
-            pose_msg.header.stamp = this->now();
-            pose_msg.header.frame_id = "base_link"; // fr5.yml의 base_link 이름과 맞춤
-
-            // 위치 변환: Fairino SDK는 mm 단위이므로 m 단위로 변환
-            pose_msg.pose.position.x = tcp_pose.tran.x / 1000.0;
-            pose_msg.pose.position.y = tcp_pose.tran.y / 1000.0;
-            pose_msg.pose.position.z = tcp_pose.tran.z / 1000.0;
-
-            // 회전 변환: Euler Degree -> Quaternion
-            tf2::Quaternion q;
-            q.setRPY(
-                tcp_pose.rpy.rx * M_PI / 180.0, 
-                tcp_pose.rpy.ry * M_PI / 180.0, 
-                tcp_pose.rpy.rz * M_PI / 180.0
-            );
-
-            pose_msg.pose.orientation.x = q.x();
-            pose_msg.pose.orientation.y = q.y();
-            pose_msg.pose.orientation.z = q.z();
-            pose_msg.pose.orientation.w = q.w();
-
-            pose_pub_->publish(pose_msg);
-        } else {
-            RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 5000,
-                "GetActualTCPPose 실패: %d", ret_pose);
-        }
+    if (!robot_ || !pose_pub_) {
+        return;
     }
+
+    DescPose tcp_pose;
+    const errno_t ret_pose = robot_->GetActualTCPPose(0, &tcp_pose);
+    if (ret_pose != 0) {
+        RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 5000,
+                             "GetActualTCPPose failed: %d", ret_pose);
+        return;
+    }
+
+    geometry_msgs::msg::PoseStamped pose_msg;
+    pose_msg.header.stamp = this->now();
+    pose_msg.header.frame_id = "base_link";
+    pose_msg.pose = teleop_slave::DescPoseToPose(tcp_pose);
+    pose_pub_->publish(pose_msg);
 }
-
-// ============== Main ==============
 
 static std::shared_ptr<FairinoControllerNode> g_node = nullptr;
 
-void signal_handler(int signum)
-{
+void signal_handler(int signum) {
     (void)signum;
     if (g_node) {
         g_node->shutdown();
@@ -565,8 +612,7 @@ void signal_handler(int signum)
     rclcpp::shutdown();
 }
 
-int main(int argc, char** argv)
-{
+int main(int argc, char** argv) {
     rclcpp::init(argc, argv);
 
     g_node = std::make_shared<FairinoControllerNode>();
@@ -575,19 +621,16 @@ int main(int argc, char** argv)
     std::signal(SIGTERM, signal_handler);
 
     if (!g_node->initialize()) {
-        RCLCPP_ERROR(rclcpp::get_logger("main"), "로봇 초기화 실패");
+        RCLCPP_ERROR(rclcpp::get_logger("main"), "Failed to initialize Fairino controller node");
         g_node.reset();
         rclcpp::shutdown();
         return 1;
     }
 
-    RCLCPP_INFO(rclcpp::get_logger("main"), "Fairino Controller 시작");
-    RCLCPP_INFO(rclcpp::get_logger("main"), "  /trajectory_points -> /execute_trajectory");
-
     try {
         rclcpp::spin(g_node);
     } catch (const std::exception& e) {
-        RCLCPP_ERROR(rclcpp::get_logger("main"), "예외: %s", e.what());
+        RCLCPP_ERROR(rclcpp::get_logger("main"), "Unhandled exception: %s", e.what());
     }
 
     if (g_node) {

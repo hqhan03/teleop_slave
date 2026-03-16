@@ -1,0 +1,27 @@
+fairino_slave_node:
+  ros__parameters:
+    calibration_file: "~/.ros/fr5_tracker_calibration.yaml"
+    orientation_mode: "full_6dof"
+    tracker_to_robot_axes: [0, 1, 2]
+    tracker_to_robot_signs: [1.0, 1.0, 1.0]
+    translation_scale_xyz: [1.0, 1.0, 1.0]
+    tracker_to_robot_rpy_deg: [0.0, 0.0, 0.0]
+    workspace_radius: 0.85
+    min_xyz: [-0.85, -0.85, 0.05]
+    max_xyz: [0.85, 0.85, 1.10]
+    max_linear_step_m: 0.05
+    max_angular_step_deg: 10.0
+
+fairino_lowlevel_controller_node:
+  ros__parameters:
+    robot_ip: "192.168.58.2"
+    expected_tcp_id: -1
+    expected_wobj_id: -1
+    ik_failure_limit: 5
+    ik_failure_timeout_sec: 0.75
+    allow_orientation_fallback: true
+    ik_position_backoff_steps: 4
+    pose_target_timeout_sec: 0.30
+    servo_cmd_period_sec: 0.008
+    servoj_max_step_deg: 2.0
+    servoj_failure_limit: 3

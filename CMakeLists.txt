@@ -19,6 +19,7 @@ find_package(pluginlib REQUIRED)
 find_package(rclcpp_lifecycle REQUIRED)
 find_package(Boost REQUIRED COMPONENTS system)
 find_package(yaml-cpp REQUIRED)
+find_package(ament_cmake_gtest QUIET)
 
 add_library(delto_tcp_comm SHARED libdelto/delto_tcp_comm/src/delto_developer_TCP.cpp)
 target_include_directories(delto_tcp_comm PUBLIC libdelto/delto_tcp_comm/include)
@@ -32,6 +33,19 @@ target_include_directories(delto_hardware PUBLIC libdelto/delto_hardware/include
 ament_target_dependencies(delto_hardware hardware_interface pluginlib rclcpp rclcpp_lifecycle std_srvs)
 target_link_libraries(delto_hardware delto_tcp_comm delto_gripper_helper Boost::system)
 
+add_library(fr5_teleop_utils STATIC
+  src/fairino_robot_interface.cpp
+  src/fr5_teleop_utils.cpp
+)
+target_include_directories(fr5_teleop_utils PUBLIC
+  include
+  ${CMAKE_CURRENT_SOURCE_DIR}/libfairino/include
+)
+ament_target_dependencies(fr5_teleop_utils geometry_msgs tf2)
+target_link_libraries(fr5_teleop_utils
+  ${CMAKE_CURRENT_SOURCE_DIR}/libfairino/lib/libfairino.so.2.3.3
+)
+
 pluginlib_export_plugin_description_file(hardware_interface delto_hardware.xml)
 
 add_executable(master_bridge_node src/master_bridge_node.cpp)
@@ -44,12 +58,13 @@ target_include_directories(fairino_lowlevel_controller_node PUBLIC
   ${CMAKE_CURRENT_SOURCE_DIR}/libfairino/include
 )
 target_link_libraries(fairino_lowlevel_controller_node
-  ${CMAKE_CURRENT_SOURCE_DIR}/libfairino/lib/libfairino.so.2.3.3
+  fr5_teleop_utils
 )
 ament_target_dependencies(fairino_lowlevel_controller_node rclcpp std_msgs sensor_msgs std_srvs geometry_msgs tf2 tf2_geometry_msgs)
 
 add_executable(fairino_slave_node src/fairino_slave_node.cpp)
 target_include_directories(fairino_slave_node PUBLIC include)
+target_link_libraries(fairino_slave_node fr5_teleop_utils yaml-cpp)
 ament_target_dependencies(fairino_slave_node rclcpp geometry_msgs sensor_msgs std_srvs tf2 tf2_geometry_msgs)
 
 add_executable(fairino_state_printer_node src/fairino_state_printer_node.cpp)
@@ -67,12 +82,15 @@ ament_target_dependencies(tesollo_slave_node
 )
 
 install(TARGETS
+  fr5_teleop_utils
   master_bridge_node
   fairino_lowlevel_controller_node
   fairino_slave_node
   tesollo_slave_node
   fairino_state_printer_node
-  DESTINATION lib/${PROJECT_NAME})
+  RUNTIME DESTINATION lib/${PROJECT_NAME}
+  ARCHIVE DESTINATION lib
+  LIBRARY DESTINATION lib)
 
 install(PROGRAMS
   scripts/curobo_mppi_solver.py
@@ -110,5 +128,15 @@ install(DIRECTORY
   config
   DESTINATION share/${PROJECT_NAME}
 )
+
+if(ament_cmake_gtest_FOUND)
+  ament_add_gtest(test_fr5_teleop_utils
+    test/test_fr5_teleop_utils.cpp
+  )
+  if(TARGET test_fr5_teleop_utils)
+    target_link_libraries(test_fr5_teleop_utils fr5_teleop_utils)
+    ament_target_dependencies(test_fr5_teleop_utils geometry_msgs tf2)
+  endif()
+endif()
 
 ament_package()
