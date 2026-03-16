@@ -4,6 +4,7 @@
 #include <memory>
 #include <vector>
 #include <string>
+#include <cstdint>
 
 // UDP & Socket
 #include <sys/socket.h>
@@ -22,7 +23,7 @@ struct HandDataPacket {
     float wristPos[3];
     float wristQuaternion[4]; // w, x, y, z
     float fingerFlexion[20];
-    float fingertipPos[15]; // 5 fingertips × (X, Y, Z) — Thumb, Index, Middle, Ring, Pinky
+    float fingertipPos[15]; // 5 fingertips × (X, Y, Z) in MANUS palm-local frame
 };
 #pragma pack(pop)
 
@@ -40,6 +41,10 @@ private:
     
     // 멤버 변수
     int sockfd_;
+    int listen_port_ = 12345;
+    uint64_t packet_count_ = 0;
+    uint64_t no_packet_count_ = 0;
+    bool first_packet_logged_ = false;
     rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr wrist_pub_;
     rclcpp::Publisher<sensor_msgs::msg::JointState>::SharedPtr joint_pub_;
     rclcpp::Publisher<geometry_msgs::msg::PoseArray>::SharedPtr fingertip_pub_;

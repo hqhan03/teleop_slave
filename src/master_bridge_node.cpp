@@ -1,5 +1,7 @@
 #include "teleop_slave/master_bridge_node.hpp"
 #include <arpa/inet.h>
+#include <cerrno>
+#include <cstring>
 #include <fcntl.h>
 #include <unistd.h>
 #include <cstdio> // printf 사용
@@ -7,6 +9,9 @@
 #include <tf2/LinearMath/Matrix3x3.h>
 
 ManusReceiverNode::ManusReceiverNode() : Node("manus_receiver_cpp"), sockfd_(-1) {
+    this->declare_parameter("listen_port", 12345);
+    listen_port_ = this->get_parameter("listen_port").as_int();
+
     wrist_pub_ = this->create_publisher<geometry_msgs::msg::PoseStamped>("manus/wrist_pose", 10);
     joint_pub_ = this->create_publisher<sensor_msgs::msg::JointState>("manus/finger_joints", 10);
     fingertip_pub_ = this->create_publisher<geometry_msgs::msg::PoseArray>("manus/fingertip_positions", 10);
@@ -16,7 +21,7 @@ ManusReceiverNode::ManusReceiverNode() : Node("manus_receiver_cpp"), sockfd_(-1)
     timer_ = this->create_wall_timer(
         std::chrono::milliseconds(10), std::bind(&ManusReceiverNode::receive_callback, this));
 
-    RCLCPP_INFO(this->get_logger(), "NREL MANUS C++ Receiver (HPP/CPP Split) Started on Port 12345");
+    RCLCPP_INFO(this->get_logger(), "NREL MANUS C++ Receiver started on UDP port %d", listen_port_);
 }
 
 ManusReceiverNode::~ManusReceiverNode() {
@@ -25,14 +30,33 @@ ManusReceiverNode::~ManusReceiverNode() {
 
 void ManusReceiverNode::setup_udp() {
     sockfd_ = socket(AF_INET, SOCK_DGRAM, 0);
+    if (sockfd_ < 0) {
+        RCLCPP_FATAL(this->get_logger(), "Failed to create UDP socket: %s", std::strerror(errno));
+        throw std::runtime_error("UDP socket creation failed");
+    }
+
+    int reuse = 1;
+    if (setsockopt(sockfd_, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse)) < 0) {
+        RCLCPP_WARN(this->get_logger(), "Failed to enable SO_REUSEADDR: %s", std::strerror(errno));
+    }
+
     struct sockaddr_in servaddr;
     memset(&servaddr, 0, sizeof(servaddr));
     servaddr.sin_family = AF_INET;
     servaddr.sin_addr.s_addr = INADDR_ANY;
-    servaddr.sin_port = htons(12345);
+    servaddr.sin_port = htons(listen_port_);
 
-    bind(sockfd_, (const struct sockaddr *)&servaddr, sizeof(servaddr));
-    fcntl(sockfd_, F_SETFL, O_NONBLOCK);
+    if (bind(sockfd_, (const struct sockaddr *)&servaddr, sizeof(servaddr)) < 0) {
+        RCLCPP_FATAL(this->get_logger(), "Failed to bind UDP port %d: %s", listen_port_, std::strerror(errno));
+        throw std::runtime_error("UDP bind failed");
+    }
+
+    if (fcntl(sockfd_, F_SETFL, O_NONBLOCK) < 0) {
+        RCLCPP_FATAL(this->get_logger(), "Failed to enable non-blocking UDP socket: %s", std::strerror(errno));
+        throw std::runtime_error("UDP socket setup failed");
+    }
+
+    RCLCPP_INFO(this->get_logger(), "UDP socket bound to 0.0.0.0:%d", listen_port_);
 }
 
 void ManusReceiverNode::receive_callback() {
@@ -41,12 +65,44 @@ void ManusReceiverNode::receive_callback() {
     socklen_t len = sizeof(cliaddr);
 
     ssize_t n = recvfrom(sockfd_, &packet, sizeof(packet), 0, (struct sockaddr *)&cliaddr, &len);
-    if (n >= (ssize_t)(sizeof(HandDataPacket) - sizeof(packet.fingertipPos))) {
+
+    const ssize_t min_size = (ssize_t)(sizeof(HandDataPacket) - sizeof(packet.fingertipPos));
+
+    if (n > 0 && n < min_size) {
+        RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 5000,
+            "Received undersized UDP packet: %zd bytes (need >= %zd)", n, min_size);
+        return;
+    }
+
+    if (n >= min_size) {
+        if (!first_packet_logged_) {
+            first_packet_logged_ = true;
+            RCLCPP_INFO(get_logger(), "First UDP packet received: %zd bytes, frame=%u from %s",
+                n, packet.frame, inet_ntoa(cliaddr.sin_addr));
+        }
+        packet_count_++;
         // Zero out fingertipPos if old sender sends smaller packet
         if (n < (ssize_t)sizeof(HandDataPacket)) {
             memset(packet.fingertipPos, 0, sizeof(packet.fingertipPos));
         }
         publish_data(packet);
+    } else {
+        if (n < 0 && errno != EAGAIN && errno != EWOULDBLOCK) {
+            RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 5000,
+                "recvfrom failed on UDP port %d: %s", listen_port_, std::strerror(errno));
+            return;
+        }
+
+        // n <= 0: no packet available (EAGAIN/EWOULDBLOCK)
+        no_packet_count_++;
+        if (no_packet_count_ % 500 == 0 && packet_count_ == 0) {
+            RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 5000,
+                "No UDP packets received yet (listening on port %d). "
+                "Check: sender running? correct IP? firewall? "
+                "TeleopMasterClient currently hardcodes its destination IP in TeleopMasterClient.cpp. "
+                "Try: sudo tcpdump -i any udp port %d -c 5",
+                listen_port_, listen_port_);
+        }
     }
 }
 
@@ -125,10 +181,10 @@ void ManusReceiverNode::publish_data(const HandDataPacket& packet) {
     printf("  Pinky:  MCP_Ab/Ad=%.2f MCP_Fl/Ex=%.2f PIP_Fl/Ex=%.2f DIP_Fl/Ex=%.2f\n",
         packet.fingerFlexion[16], packet.fingerFlexion[17], packet.fingerFlexion[18], packet.fingerFlexion[19]);
 
-    // 3. 데이터 퍼블리시 (Fingertip Positions)
+    // 3. 데이터 퍼블리시 (Palm-local raw skeleton fingertip positions)
     auto fingertip_msg = geometry_msgs::msg::PoseArray();
     fingertip_msg.header.stamp = now;
-    fingertip_msg.header.frame_id = "palm";
+    fingertip_msg.header.frame_id = "manus_palm";
 
     const char* fingerNames[5] = {"Thumb", "Index", "Middle", "Ring", "Pinky"};
     bool hasFingertipData = false;
@@ -150,7 +206,7 @@ void ManusReceiverNode::publish_data(const HandDataPacket& packet) {
 
     // 터미널에 Fingertip 위치 출력
     if (hasFingertipData) {
-        printf("[Fingertip Positions (Raw Skeleton)]\n");
+        printf("[Fingertip Positions (Raw Skeleton Palm Frame)]\n");
         for (int f = 0; f < 5; f++) {
             printf("  %-7s: X:%.4f Y:%.4f Z:%.4f\n", fingerNames[f],
                 packet.fingertipPos[f * 3 + 0], packet.fingertipPos[f * 3 + 1], packet.fingertipPos[f * 3 + 2]);
