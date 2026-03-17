@@ -24,6 +24,17 @@ tf2::Quaternion NormalizeQuaternion(tf2::Quaternion quat) {
     return quat;
 }
 
+tf2::Quaternion ApplyTrackerAxisRotation(const tf2::Quaternion& tracker_delta,
+                                         const tf2::Quaternion& tracker_to_robot_basis) {
+    const tf2::Matrix3x3 tracker_rot(NormalizeQuaternion(tracker_delta));
+    const tf2::Matrix3x3 basis_rot(NormalizeQuaternion(tracker_to_robot_basis));
+    const tf2::Matrix3x3 mapped_rot = basis_rot * tracker_rot * basis_rot.transpose();
+
+    tf2::Quaternion mapped_quat;
+    mapped_rot.getRotation(mapped_quat);
+    return NormalizeQuaternion(mapped_quat);
+}
+
 tf2::Vector3 ClampVectorPerAxis(const tf2::Vector3& input,
                                 const tf2::Vector3& min_xyz,
                                 const tf2::Vector3& max_xyz) {
@@ -114,9 +125,8 @@ tf2::Quaternion ComputeMappedOrientation(const tf2::Quaternion& base_robot_orien
     tf2::Quaternion tracker_delta = tracker_current_orientation * tracker_zero_orientation.inverse();
     tracker_delta = NormalizeQuaternion(tracker_delta);
 
-    tf2::Quaternion basis = NormalizeQuaternion(tracker_to_robot_basis);
-    tf2::Quaternion mapped_delta = basis * tracker_delta * basis.inverse();
-    mapped_delta = NormalizeQuaternion(mapped_delta);
+    tf2::Quaternion mapped_delta =
+        ApplyTrackerAxisRotation(tracker_delta, tracker_to_robot_basis);
 
     if (mode == OrientationMode::kYawOnly) {
         tf2::Matrix3x3 yaw_matrix(mapped_delta);

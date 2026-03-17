@@ -1,6 +1,7 @@
 #include "teleop_slave/fairino_slave_node.hpp"
 
 #include <chrono>
+#include <cmath>
 #include <fstream>
 #include <stdexcept>
 
@@ -83,12 +84,18 @@ FairinoSlaveNode::FairinoSlaveNode() : Node("fairino_slave_node") {
     if (basis_rpy.size() != 3) {
         throw std::runtime_error("tracker_to_robot_rpy_deg must have exactly 3 entries");
     }
+    for (size_t i = 0; i < 3; ++i) {
+        tracker_to_robot_basis_rpy_deg_[i] = basis_rpy[i];
+    }
     tracker_to_robot_basis_ = teleop_slave::QuaternionFromRPYDegrees(
-        tf2::Vector3(basis_rpy[0], basis_rpy[1], basis_rpy[2]));
+        tf2::Vector3(tracker_to_robot_basis_rpy_deg_[0],
+                     tracker_to_robot_basis_rpy_deg_[1],
+                     tracker_to_robot_basis_rpy_deg_[2]));
     orientation_mode_ = teleop_slave::ParseOrientationMode(
         this->get_parameter("orientation_mode").as_string());
 
     loadCalibrationOverrides();
+    logCalibrationConfiguration();
 
     manus_sub_ = this->create_subscription<geometry_msgs::msg::PoseStamped>(
         "/manus/wrist_pose", 10,
@@ -117,16 +124,19 @@ FairinoSlaveNode::~FairinoSlaveNode() {
 }
 
 void FairinoSlaveNode::loadCalibrationOverrides() {
-    const std::string calibration_file = teleop_slave::ExpandUserPath(
+    calibration_file_checked_ = teleop_slave::ExpandUserPath(
         this->get_parameter("calibration_file").as_string());
-    const YAML::Node root = LoadCalibrationNode(calibration_file);
+    const YAML::Node root = LoadCalibrationNode(calibration_file_checked_);
     if (!root) {
         RCLCPP_INFO(this->get_logger(),
-                    "No tracker calibration file found at %s. Using node parameters.",
-                    calibration_file.c_str());
+                    "No tracker calibration override found at %s. Using base FR5 params from "
+                    "--params-file / node parameters.",
+                    calibration_file_checked_.c_str());
         return;
     }
 
+    calibration_override_loaded_ = true;
+    calibration_source_ = calibration_file_checked_;
     tracker_to_robot_axes_ = ReadArray3<int>(root["tracker_to_robot_axes"], tracker_to_robot_axes_);
     tracker_to_robot_signs_ =
         ReadArray3<double>(root["tracker_to_robot_signs"], tracker_to_robot_signs_);
@@ -136,17 +146,50 @@ void FairinoSlaveNode::loadCalibrationOverrides() {
         {translation_scale_xyz_.x(), translation_scale_xyz_.y(), translation_scale_xyz_.z()});
     translation_scale_xyz_.setValue(scale[0], scale[1], scale[2]);
 
-    const auto basis = ReadArray3<double>(root["tracker_to_robot_rpy_deg"], {0.0, 0.0, 0.0});
-    tracker_to_robot_basis_ = teleop_slave::QuaternionFromRPYDegrees(
-        tf2::Vector3(basis[0], basis[1], basis[2]));
+    if (root["tracker_to_robot_rpy_deg"]) {
+        const auto basis = ReadArray3<double>(root["tracker_to_robot_rpy_deg"], {0.0, 0.0, 0.0});
+        for (size_t i = 0; i < 3; ++i) {
+            tracker_to_robot_basis_rpy_deg_[i] = basis[i];
+        }
+        tracker_to_robot_basis_ = teleop_slave::QuaternionFromRPYDegrees(
+            tf2::Vector3(tracker_to_robot_basis_rpy_deg_[0],
+                         tracker_to_robot_basis_rpy_deg_[1],
+                         tracker_to_robot_basis_rpy_deg_[2]));
+    }
 
     if (root["orientation_mode"]) {
         orientation_mode_ =
             teleop_slave::ParseOrientationMode(root["orientation_mode"].as<std::string>());
     }
 
-    RCLCPP_INFO(this->get_logger(), "Loaded tracker calibration overrides from %s",
-                calibration_file.c_str());
+    RCLCPP_INFO(this->get_logger(), "Loaded tracker calibration override from %s",
+                calibration_file_checked_.c_str());
+}
+
+void FairinoSlaveNode::logCalibrationConfiguration() const {
+    RCLCPP_INFO(this->get_logger(),
+                "FR5 base config source: values loaded from --params-file / node parameters");
+    RCLCPP_INFO(this->get_logger(),
+                "FR5 calibration override: %s (checked path: %s)",
+                calibration_override_loaded_ ? "loaded" : "not found; base params active",
+                calibration_file_checked_.c_str());
+    RCLCPP_INFO(this->get_logger(),
+                "Tracker calibration source: %s",
+                calibration_source_.c_str());
+    RCLCPP_INFO(this->get_logger(),
+                "Tracker calibration: axes=[%d, %d, %d] signs=[%.1f, %.1f, %.1f] "
+                "scale=[%.3f, %.3f, %.3f] raw_basis_rpy_deg=[%.1f, %.1f, %.1f] "
+                "basis_quat_xyzw=[%.6f, %.6f, %.6f, %.6f]",
+                tracker_to_robot_axes_[0], tracker_to_robot_axes_[1], tracker_to_robot_axes_[2],
+                tracker_to_robot_signs_[0], tracker_to_robot_signs_[1], tracker_to_robot_signs_[2],
+                translation_scale_xyz_.x(), translation_scale_xyz_.y(), translation_scale_xyz_.z(),
+                tracker_to_robot_basis_rpy_deg_[0],
+                tracker_to_robot_basis_rpy_deg_[1],
+                tracker_to_robot_basis_rpy_deg_[2],
+                tracker_to_robot_basis_.x(),
+                tracker_to_robot_basis_.y(),
+                tracker_to_robot_basis_.z(),
+                tracker_to_robot_basis_.w());
 }
 
 void FairinoSlaveNode::robotPoseCallback(const geometry_msgs::msg::PoseStamped::SharedPtr msg) {

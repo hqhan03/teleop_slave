@@ -5,6 +5,8 @@ fairino_slave_node:
     tracker_to_robot_axes: [0, 1, 2]
     tracker_to_robot_signs: [1.0, 1.0, 1.0]
     translation_scale_xyz: [1.0, 1.0, 1.0]
+    # Repo default stays identity. For hardware tuning, point calibration_file at
+    # teleop_slave/config/fr5_tracker_calibration.yaml or copy that file to ~/.ros/.
     tracker_to_robot_rpy_deg: [0.0, 0.0, 0.0]
     workspace_radius: 0.85
     min_xyz: [-0.85, -0.85, 0.05]

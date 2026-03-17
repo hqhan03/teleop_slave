@@ -133,6 +133,68 @@ TEST(Fr5TeleopUtilsTest, ComputeMappedOrientationSupportsPhasedModes) {
     EXPECT_GT(teleop_slave::QuaternionAngularDistanceDegrees(yaw_only, full), 1.0);
 }
 
+TEST(Fr5TeleopUtilsTest, ComputeMappedOrientationKeepsAxesAlignedWithIdentityBasis) {
+    const tf2::Quaternion base(0.0, 0.0, 0.0, 1.0);
+    const tf2::Quaternion zero(0.0, 0.0, 0.0, 1.0);
+    const tf2::Quaternion basis = teleop_slave::QuaternionFromRPYDegrees(
+        tf2::Vector3(0.0, 0.0, 0.0));
+
+    tf2::Quaternion tracker_x;
+    tracker_x.setRPY(0.25, 0.0, 0.0);
+    tf2::Quaternion expected_x;
+    expected_x.setRPY(0.25, 0.0, 0.0);
+    const tf2::Quaternion mapped_x = teleop_slave::ComputeMappedOrientation(
+        base, zero, tracker_x, basis, teleop_slave::OrientationMode::kFull6Dof);
+    EXPECT_NEAR(teleop_slave::QuaternionAngularDistanceDegrees(mapped_x, expected_x), 0.0, 1e-6);
+
+    tf2::Quaternion tracker_y;
+    tracker_y.setRPY(0.0, 0.25, 0.0);
+    tf2::Quaternion expected_y;
+    expected_y.setRPY(0.0, 0.25, 0.0);
+    const tf2::Quaternion mapped_y = teleop_slave::ComputeMappedOrientation(
+        base, zero, tracker_y, basis, teleop_slave::OrientationMode::kFull6Dof);
+    EXPECT_NEAR(teleop_slave::QuaternionAngularDistanceDegrees(mapped_y, expected_y), 0.0, 1e-6);
+
+    tf2::Quaternion tracker_z;
+    tracker_z.setRPY(0.0, 0.0, 0.25);
+    tf2::Quaternion expected_z;
+    expected_z.setRPY(0.0, 0.0, 0.25);
+    const tf2::Quaternion mapped_z = teleop_slave::ComputeMappedOrientation(
+        base, zero, tracker_z, basis, teleop_slave::OrientationMode::kFull6Dof);
+    EXPECT_NEAR(teleop_slave::QuaternionAngularDistanceDegrees(mapped_z, expected_z), 0.0, 1e-6);
+}
+
+TEST(Fr5TeleopUtilsTest, ComputeMappedOrientationRemapsTrackerAxesToCandidateRobotBasis) {
+    const tf2::Quaternion base(0.0, 0.0, 0.0, 1.0);
+    const tf2::Quaternion zero(0.0, 0.0, 0.0, 1.0);
+    const tf2::Quaternion basis = teleop_slave::QuaternionFromRPYDegrees(
+        tf2::Vector3(0.0, -90.0, 180.0));
+
+    tf2::Quaternion tracker_roll;
+    tracker_roll.setRPY(0.25, 0.0, 0.0);
+    tf2::Quaternion expected_yaw;
+    expected_yaw.setRPY(0.0, 0.0, 0.25);
+    const tf2::Quaternion mapped_roll = teleop_slave::ComputeMappedOrientation(
+        base, zero, tracker_roll, basis, teleop_slave::OrientationMode::kFull6Dof);
+    EXPECT_NEAR(teleop_slave::QuaternionAngularDistanceDegrees(mapped_roll, expected_yaw), 0.0, 1e-6);
+
+    tf2::Quaternion tracker_pitch;
+    tracker_pitch.setRPY(0.0, 0.25, 0.0);
+    tf2::Quaternion expected_neg_pitch;
+    expected_neg_pitch.setRPY(0.0, -0.25, 0.0);
+    const tf2::Quaternion mapped_pitch = teleop_slave::ComputeMappedOrientation(
+        base, zero, tracker_pitch, basis, teleop_slave::OrientationMode::kFull6Dof);
+    EXPECT_NEAR(teleop_slave::QuaternionAngularDistanceDegrees(mapped_pitch, expected_neg_pitch), 0.0, 1e-6);
+
+    tf2::Quaternion tracker_yaw;
+    tracker_yaw.setRPY(0.0, 0.0, 0.25);
+    tf2::Quaternion expected_roll;
+    expected_roll.setRPY(0.25, 0.0, 0.0);
+    const tf2::Quaternion mapped_yaw = teleop_slave::ComputeMappedOrientation(
+        base, zero, tracker_yaw, basis, teleop_slave::OrientationMode::kFull6Dof);
+    EXPECT_NEAR(teleop_slave::QuaternionAngularDistanceDegrees(mapped_yaw, expected_roll), 0.0, 1e-6);
+}
+
 TEST(Fr5TeleopUtilsTest, ClampPoseTargetLimitsStepAndWorkspace) {
     geometry_msgs::msg::Pose previous = MakePose(0.1, 0.0, 0.4, 0.0, 0.0, 0.0);
     geometry_msgs::msg::Pose candidate = MakePose(0.5, 0.5, 1.5, 0.0, 0.0, 1.5);

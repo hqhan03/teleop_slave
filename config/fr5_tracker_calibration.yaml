@@ -1,0 +1,20 @@
+fairino_slave_node:
+  ros__parameters:
+    # Candidate orientation basis for the observed symptom:
+    # - tracker roll was driving robot yaw
+    # - tracker yaw was driving robot roll
+    # - tracker pitch was inverted
+    #
+    # This basis re-expresses tracker axes approximately as:
+    # - tracker X -> robot Z
+    # - tracker Y -> robot -Y
+    # - tracker Z -> robot X
+    #
+    # Use this file as a runtime override while manually tuning on hardware.
+    orientation_mode: "full_6dof"
+    tracker_to_robot_rpy_deg: [-90.0, 180.0, 0.0]
+
+    # Keep translation calibration unchanged during orientation tuning.
+    tracker_to_robot_axes: [0, 1, 2]
+    tracker_to_robot_signs: [1.0, 1.0, 1.0]
+    translation_scale_xyz: [1.0, 1.0, 1.0]
