@@ -1,0 +1,74 @@
+# Fingertip IK Retargeter Configuration
+# ──────────────────────────────────────
+
+fingertip_ik_node:
+  ros__parameters:
+    # Path to DG-5F URDF (empty = auto-find in workspace)
+    urdf_path: ""
+
+    # Use dummy mode topic (/joint_trajectory_controller/joint_trajectory)
+    dummy_mode: false
+
+    # Input frame mode for /manus/fingertip_positions:
+    # - palm_local: MANUS sender already publishes palm-local fingertips (recommended)
+    # - legacy_tracker_world: old sender published tracker/world-like fingertips
+    input_frame_mode: "palm_local"
+
+    # Optional auto-loaded calibration file. If it exists, it overrides the
+    # axis remap / signs / hand scale / palm offset below.
+    calibration_file: "~/.ros/manus_dg5f_ik_frame.yaml"
+
+    # Scale factor: human hand size → DG-5F hand size
+    # Adjust if the DG-5F is significantly smaller/larger than your hand.
+    # < 1.0 = shrink human workspace to fit smaller robot hand
+    # > 1.0 = expand (unlikely)
+    hand_scale: 1.0
+
+    # Anisotropic scaling in the DG-5F palm frame after the Manus->DG5F axis
+    # remap. The Y axis primarily controls finger spread / abduction-adduction.
+    workspace_axis_scale: [1.0, 1.45, 1.0]
+
+    # Optional per-finger scalar after axis scaling. The stage-2 multi-pose
+    # calibration fits these automatically.
+    finger_target_scales: [1.0, 1.0, 1.0, 1.0, 1.0]
+
+    # Extra scale for the thumb target only. Increase if the thumb feels
+    # under-responsive compared with the glove. Set this back to 1.0 if you
+    # are using the fitted finger_target_scales from stage-2 calibration.
+    thumb_target_scale: 1.35
+
+    # XYZ offset to align human palm origin with DG-5F palm origin (meters)
+    # Tune if fingertips are systematically shifted in one direction.
+    palm_offset: [0.0, 0.0, 0.0]
+
+    # SDLS joint damping (higher = smoother but slower tracking)
+    joint_damping: 0.1
+
+    # Blend between the current joint state and the reference/open pose when
+    # choosing an IK branch. Lower values pull ambiguous solutions back toward
+    # the open/reference pose and help prevent "stuck bent DIP" behavior.
+    current_pose_weight: 0.35
+
+    # Prevent the IK from using backward-bending branches on non-thumb finger
+    # flexion joints. Recommended for natural teleop.
+    prevent_hyperextension: true
+
+    # DG-5F reference pose used for solver startup and calibration geometry.
+    # This should match the robot pose you consider the neutral/open hand.
+    initial_joint_positions_deg: [77.0, -80.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+
+    # Axis remapping from Manus palm frame to DG-5F palm frame
+    # Each entry is the Manus axis index that maps to the corresponding DG-5F axis
+    # DG5F_X ← Manus_Y (axis 1), DG5F_Y ← Manus_Z (axis 2), DG5F_Z ← Manus_X (axis 0)
+    manus_to_dg5f_axes: [1, 2, 0]
+
+    # Sign flip per DG-5F axis after remapping
+    # Negate Manus_Y for DG5F_X (finger extension direction)
+    manus_to_dg5f_signs: [-1.0, 1.0, 1.0]
+
+    # Per-finger enable (useful for debugging one finger at a time)
+    enable_thumb: true
+    enable_index: true
+    enable_middle: true
+    enable_ring: true
+    enable_pinky: true

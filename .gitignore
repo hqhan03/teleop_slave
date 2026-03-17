@@ -1,5 +1,29 @@
+# Colcon build artifacts
 build/
 install/
 log/
-.vscode/
+
+# Python
+__pycache__/
 *.pyc
+*.pyo
+*.egg-info/
+
+# IDE
+.vscode/
+.idea/
+
+# Vendor materials (large, not in VCS)
+Tesollo DG-5F Hand/
+Tesollo DG-5F Hand.zip
+DG-5F_User Manual_En_v1.1.1.pdf
+
+# Debug artifacts
+*.gv
+frames_*.pdf
+
+# Claude Code local settings
+.claude/
+
+# Junk
+-X
