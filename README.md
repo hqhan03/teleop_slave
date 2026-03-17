@@ -87,14 +87,21 @@ Run the FR5 path and one hand path at the same time. Do not run both hand publis
 
 ## Workspace Setup
 
-From the workspace root:
+Clone with submodules, then build:
 
 ```bash
+git clone --recurse-submodules https://github.com/hqhan03/tesollo_manus_teleop.git
+cd tesollo_manus_teleop
 source /opt/ros/jazzy/setup.bash
-cd /home/nrel/Desktop/tesollo_manus_teleop
 rosdep install --from-paths teleop_slave delto_m_ros2 fingertip_ik_retargeter --ignore-src -r -y
 colcon build --symlink-install
 source install/setup.bash
+```
+
+If you already cloned without `--recurse-submodules`, initialize the submodules manually:
+
+```bash
+git submodule update --init --recursive
 ```
 
 If you are working only on one package, you can also build it selectively with `colcon build --packages-select ...`.
