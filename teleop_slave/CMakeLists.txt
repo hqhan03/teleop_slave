@@ -67,10 +67,6 @@ target_include_directories(fairino_slave_node PUBLIC include)
 target_link_libraries(fairino_slave_node fr5_teleop_utils yaml-cpp)
 ament_target_dependencies(fairino_slave_node rclcpp geometry_msgs sensor_msgs std_srvs tf2 tf2_geometry_msgs)
 
-add_executable(fairino_state_printer_node src/fairino_state_printer_node.cpp)
-target_include_directories(fairino_state_printer_node PUBLIC include)
-ament_target_dependencies(fairino_state_printer_node rclcpp sensor_msgs geometry_msgs tf2 tf2_geometry_msgs)
-
 add_executable(tesollo_slave_node src/tesollo_slave_node.cpp)
 target_include_directories(tesollo_slave_node PUBLIC include libdelto/delto_tcp_comm/include)
 target_link_libraries(tesollo_slave_node delto_tcp_comm yaml-cpp)
@@ -87,15 +83,9 @@ install(TARGETS
   fairino_lowlevel_controller_node
   fairino_slave_node
   tesollo_slave_node
-  fairino_state_printer_node
   RUNTIME DESTINATION lib/${PROJECT_NAME}
   ARCHIVE DESTINATION lib
   LIBRARY DESTINATION lib)
-
-install(PROGRAMS
-  scripts/curobo_mppi_solver.py
-  DESTINATION lib/${PROJECT_NAME}
-)
 
 install(DIRECTORY
   libfairino/lib/
@@ -127,6 +117,12 @@ install(DIRECTORY
 install(DIRECTORY
   config
   DESTINATION share/${PROJECT_NAME}
+)
+
+install(PROGRAMS
+  src/manus_retarget_vendor.py
+  src/manus_retarget_vendor
+  DESTINATION lib/${PROJECT_NAME}
 )
 
 if(ament_cmake_gtest_FOUND)

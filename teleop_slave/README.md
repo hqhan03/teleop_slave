@@ -297,6 +297,42 @@ ros2 run teleop_slave tesollo_slave_node \
   --ros-args --params-file teleop_slave/config/tesollo_params.yaml
 ```
 
+### Real hardware with the vendor retarget mapping
+
+This path uses the Tesollo vendor retarget logic adapted to the current workspace.
+It subscribes to `/manus/finger_joints` and publishes a `JointTrajectory` to the
+DG-5F controller.
+
+Terminal 1:
+
+```bash
+source /opt/ros/jazzy/setup.bash
+source install/setup.bash
+ros2 launch dg5f_driver dg5f_right_driver.launch.py delto_ip:=169.254.186.72 delto_port:=502
+```
+
+Terminal 2:
+
+```bash
+source /opt/ros/jazzy/setup.bash
+source install/setup.bash
+ros2 run teleop_slave master_bridge_node
+```
+
+Terminal 3:
+
+```bash
+source /opt/ros/jazzy/setup.bash
+source install/setup.bash
+ros2 run teleop_slave manus_retarget_vendor
+```
+
+If you are driving the left hand instead, set:
+
+```bash
+ros2 run teleop_slave manus_retarget_vendor --ros-args -p hand_side:=left
+```
+
 ### Dummy mode
 
 If you want to test the mapping without the real DG-5F driver:
@@ -307,6 +343,14 @@ ros2 run teleop_slave tesollo_slave_node \
 ```
 
 In dummy mode the node publishes to `/joint_trajectory_controller/joint_trajectory` instead of the real DG-5F controller topic.
+
+For the vendor retarget node, use:
+
+```bash
+source /opt/ros/jazzy/setup.bash
+source install/setup.bash
+ros2 run teleop_slave manus_retarget_vendor --ros-args -p dummy_mode:=true
+```
 
 ## DG-5F Direct-Mapping Calibration
 
