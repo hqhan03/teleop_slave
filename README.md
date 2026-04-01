@@ -147,6 +147,7 @@ Important notes for reproducibility:
 - The exact diffs from local external vendor trees are backed up under `resources/external_patches/`.
 - `fairino-cpp-sdk/` and `frcobot_ros2/` are not required for the documented FR5 tracker teleop + DG-5F keyvector + CSV logger flow. They remain optional local reference trees and are not part of the root repo checkout.
 - `teleop_slave_curobo/` is included in this backup, but its current config still expects an external `frcobot_ros2` checkout for some Curobo/asset paths.
+- Publishing this backup to GitHub still requires running `git push origin main` from a machine with GitHub credentials configured.
 
 If you are working only on one package, you can also build it selectively with `colcon build --packages-select ...`.
 
