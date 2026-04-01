@@ -15,6 +15,14 @@
 static constexpr int NUM_JOINTS = 20;
 static constexpr int NUM_CALIB_POSES = 5;
 
+static const std::vector<std::string> DG5F_JOINT_NAMES = {
+    "rj_dg_1_1", "rj_dg_1_2", "rj_dg_1_3", "rj_dg_1_4",
+    "rj_dg_2_1", "rj_dg_2_2", "rj_dg_2_3", "rj_dg_2_4",
+    "rj_dg_3_1", "rj_dg_3_2", "rj_dg_3_3", "rj_dg_3_4",
+    "rj_dg_4_1", "rj_dg_4_2", "rj_dg_4_3", "rj_dg_4_4",
+    "rj_dg_5_1", "rj_dg_5_2", "rj_dg_5_3", "rj_dg_5_4"
+};
+
 enum class CalibState { IDLE, WAITING_FOR_CAPTURE, AVERAGING, NEUTRAL_WAITING, NEUTRAL_AVERAGING };
 
 class TesolloSlaveNode : public rclcpp::Node {

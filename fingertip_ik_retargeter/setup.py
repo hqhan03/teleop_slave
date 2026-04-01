@@ -8,6 +8,7 @@ setup(
     name=package_name,
     version='0.1.0',
     packages=[package_name],
+    package_data={package_name: ['data/*.urdf']},
     data_files=[
         ('share/ament_index/resource_index/packages', ['resource/' + package_name]),
         ('share/' + package_name, ['package.xml']),
@@ -22,6 +23,7 @@ setup(
             'offline_ik_test = fingertip_ik_retargeter.offline_ik_test:main',
             'calibrate_ik_frame = fingertip_ik_retargeter.calibrate_ik_frame:main',
             'calibrate_ik_multipose = fingertip_ik_retargeter.calibrate_ik_multipose:main',
+            'generate_kapandji_poses = fingertip_ik_retargeter.generate_kapandji_poses:main',
         ],
     },
 )

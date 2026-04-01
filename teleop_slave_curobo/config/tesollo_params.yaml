@@ -1,0 +1,40 @@
+# Tesollo DG-5F Joint Mapping Configuration
+# ──────────────────────────────────────────
+# Motor ordering (20 motors, 4 per finger):
+#   [0]  Motor 1:  Thumb MCPSpread      [1]  Motor 2:  Thumb Opposition
+#   [2]  Motor 3:  Thumb PIP            [3]  Motor 4:  Thumb DIP
+#   [4]  Motor 5:  Index MCP Ab/Ad      [5]  Motor 6:  Index MCP Fl/Ex
+#   [6]  Motor 7:  Index PIP Fl/Ex      [7]  Motor 8:  Index DIP Fl/Ex
+#   [8]  Motor 9:  Middle MCP Ab/Ad     [9]  Motor 10: Middle MCP Fl/Ex
+#   [10] Motor 11: Middle PIP Fl/Ex     [11] Motor 12: Middle DIP Fl/Ex
+#   [12] Motor 13: Ring MCP Ab/Ad       [13] Motor 14: Ring MCP Fl/Ex
+#   [14] Motor 15: Ring PIP Fl/Ex       [15] Motor 16: Ring DIP Fl/Ex
+#   [16] Motor 17: Pinky CMC Ab/Ad (unmapped, gain=0)
+#   [17] Motor 18: Pinky MCP Ab/Ad     [18] Motor 19: Pinky PIP Fl/Ex
+#   [19] Motor 20: Pinky DIP Fl/Ex (PIP+DIP combined from Manus)
+
+tesollo_slave_node:
+  ros__parameters:
+    dummy_mode: false
+    calibration_file: ""
+
+    # Which Manus joint index (0-19) feeds each Tesollo motor (-1 = unmapped)
+    # Manus thumb: [0]=MCPSpread, [1]=MCPStretch, [2]=PIPStretch, [3]=DIPStretch
+    manus_idx: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, -1, 16, 17, 18]
+
+    # Per-joint gain (sign is baked in). Tune to scale Manus range to Tesollo range.
+    # Thumb gains:
+    #   Motor 1 (Thumb MCPSpread): Manus MCPSpread ~40 deg -> Tesollo 99 deg range -> gain ~ -2.0
+    #   Motor 2 (Thumb Opposition): Manus MCPStretch (CMC Fl/Ex) only
+    #     Manus CMC opp range ~0.89 rad -> Tesollo 155 deg range -> gain ~ +2.5
+    #   Motor 3 (Thumb PIP): Manus PIPStretch -> ~1:1 mapping
+    #   Motor 4 (Thumb DIP): Manus DIPStretch -> ~1:1 mapping
+    gain: [-3.5, 4.0, 1.0, 1.0, -1.0, 1.0, 1.0, 1.0, -1.0, 1.0, 1.0, 1.0, -1.0, 1.0, 1.0, 1.0, 0.0, -1.0, 1.0, 1.0]
+
+    # Desired Tesollo motor positions (degrees) when user holds a neutral/relaxed hand.
+    # Used as reference for single-pose offset calibration.
+    neutral_tesollo_deg: [77.0, -80.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+
+    # Motor physical limits (degrees)
+    motor_min_deg: [-22.0, -155.0, -90.0, -90.0, -31.0, 0.0, -90.0, -90.0, -30.0, 0.0, -90.0, -90.0, -15.0, 0.0, -90.0, -90.0, 0.0, -15.0, -90.0, -90.0]
+    motor_max_deg: [77.0, 0.0, 90.0, 90.0, 20.0, 115.0, 90.0, 90.0, 30.0, 115.0, 90.0, 90.0, 32.0, 110.0, 90.0, 90.0, 60.0, 90.0, 90.0, 90.0]

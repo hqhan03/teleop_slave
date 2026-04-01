@@ -1,0 +1,26 @@
+diff --git a/libfairino/CMakeLists.txt b/libfairino/CMakeLists.txt
+index 3edbdee..b91e6d6 100644
+--- a/libfairino/CMakeLists.txt
++++ b/libfairino/CMakeLists.txt
+@@ -23,7 +23,13 @@ endif()
+ 
+ set(BASE_INCLUDE ${CMAKE_CURRENT_SOURCE_DIR}/src/include/Base)
+ set(LOG_INCLUDE ${CMAKE_CURRENT_SOURCE_DIR}/src/include/Log)
+-set(ROBOT_INCLUDE ${CMAKE_CURRENT_SOURCE_DIR}/src/include/Robot-CN)
++if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/src/include/Robot-CN")
++    set(ROBOT_INCLUDE ${CMAKE_CURRENT_SOURCE_DIR}/src/include/Robot-CN)
++elseif(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/src/include/Robot-EN")
++    set(ROBOT_INCLUDE ${CMAKE_CURRENT_SOURCE_DIR}/src/include/Robot-EN)
++else()
++    message(FATAL_ERROR "Could not find robot headers under src/include/Robot-CN or src/include/Robot-EN")
++endif()
+ set(TCP_INCLUDE ${CMAKE_CURRENT_SOURCE_DIR}/src/include/ComClient)
+ set(XMLRPC_INCLUDE ${CMAKE_CURRENT_SOURCE_DIR}/src/include/XmlRpc)
+ 
+@@ -101,4 +107,4 @@ elseif(UNIX)
+     target_compile_options(test_fairino PRIVATE -O0)
+     target_link_libraries(test_fairino pthread)
+     #target_link_libraries(test_fairino ${CMAKE_CURRENT_SOURCE_DIR}/LinuxBuild/bin/libfairino.so)
+-endif()
+\ No newline at end of file
++endif()

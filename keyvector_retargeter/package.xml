@@ -1,0 +1,27 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>keyvector_retargeter</name>
+  <version>0.1.0</version>
+  <description>Keyvector-based Manus to Tesollo DG-5F retargeting from scratch</description>
+  <maintainer email="nrel@todo.com">nrel</maintainer>
+  <license>BSD-3-Clause</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <depend>rclpy</depend>
+  <depend>geometry_msgs</depend>
+  <depend>sensor_msgs</depend>
+  <depend>trajectory_msgs</depend>
+  <depend>builtin_interfaces</depend>
+  <depend>std_msgs</depend>
+  <depend>visualization_msgs</depend>
+  <exec_depend>ament_index_python</exec_depend>
+  <exec_depend>launch</exec_depend>
+  <exec_depend>launch_ros</exec_depend>
+
+  <test_depend>python3-pytest</test_depend>
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>

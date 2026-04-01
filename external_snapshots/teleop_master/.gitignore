@@ -1,0 +1,27 @@
+# Visual Studio / MSBuild files
+.vs/
+*.user
+*.suo
+*.ncb
+*.lock
+*.sln.docstates
+
+# Build artifacts
+Temp/
+Output/
+x64/
+x86/
+Debug/
+Release/
+*.obj
+*.ilk
+*.tlog
+*.lastbuildstate
+*.idb
+*.pdb
+*.exe
+*.dll
+
+# Log files
+*.log
+log.txt

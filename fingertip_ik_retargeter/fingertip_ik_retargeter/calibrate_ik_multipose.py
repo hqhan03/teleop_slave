@@ -1,4 +1,4 @@
-"""Guided stage-2 multi-pose calibration for Manus palm-local -> DG5F fingertip IK."""
+"""Guided stage-2 multi-pose calibration for Manus wrist-local -> DG5F fingertip IK."""
 
 from __future__ import annotations
 
@@ -21,9 +21,15 @@ from fingertip_ik_retargeter.frame_calibration import (
     DEFAULT_CALIBRATION_PATH,
     DG5F_MULTI_POSE_CALIBRATION,
     MANUS_FINGER_ORDER,
+    find_dg5f_urdf,
     fit_retarget_scales,
     load_calibration,
     save_calibration,
+)
+from fingertip_ik_retargeter.manus_frames import (
+    CANONICAL_MANUS_HAND_FRAME,
+    LEGACY_MANUS_HAND_FRAME,
+    classify_manus_hand_frame,
 )
 
 
@@ -39,7 +45,7 @@ class IKMultiPoseCalibrator(Node):
         self.declare_parameter('output_path', DEFAULT_CALIBRATION_PATH)
         self.declare_parameter('initial_joint_positions_deg', DEFAULT_REFERENCE_JOINTS_DEG.tolist())
 
-        urdf_path = self.get_parameter('urdf_path').value or self._find_urdf()
+        urdf_path = self.get_parameter('urdf_path').value or find_dg5f_urdf()
         if not os.path.exists(urdf_path):
             raise FileNotFoundError(f'URDF not found: {urdf_path}')
 
@@ -76,6 +82,8 @@ class IKMultiPoseCalibrator(Node):
 
         self._capture_buffer = []
         self._capture_active = False
+        self._warned_legacy_hand_frame = False
+        self._warned_invalid_hand_frame = False
 
         self._solver = DG5FIKSolver(
             urdf_path,
@@ -94,21 +102,24 @@ class IKMultiPoseCalibrator(Node):
             f'Loaded stage-1 calibration from {self._calibration_file}. '
             f'Will save updated calibration to {self._output_path}.')
 
-    def _find_urdf(self) -> str:
-        candidates = [
-            os.path.join(os.getcwd(), 'delto_m_ros2', 'dg_description', 'urdf', 'dg5f_right.urdf'),
-            os.path.join(os.getcwd(), 'install', 'dg_description', 'share',
-                         'dg_description', 'urdf', 'dg5f_right.urdf'),
-            os.path.expanduser('~/Desktop/tesollo_manus_teleop/delto_m_ros2/dg_description/urdf/dg5f_right.urdf'),
-        ]
-        for path in candidates:
-            if os.path.exists(path):
-                return path
-        return candidates[0]
-
     def _callback(self, msg: PoseArray):
         if len(msg.poses) < 5:
             return
+
+        frame_ok, is_legacy = classify_manus_hand_frame(msg.header.frame_id)
+        if not frame_ok:
+            if not self._warned_invalid_hand_frame:
+                self.get_logger().warn(
+                    f'Ignoring fingertip message in unexpected frame {msg.header.frame_id!r}. '
+                    f'Expected {CANONICAL_MANUS_HAND_FRAME!r} or legacy {LEGACY_MANUS_HAND_FRAME!r}.')
+                self._warned_invalid_hand_frame = True
+            return
+        if is_legacy and not self._warned_legacy_hand_frame:
+            self.get_logger().warn(
+                f'Received legacy fingertip frame {LEGACY_MANUS_HAND_FRAME!r}; '
+                f'treating it as wrist-local. Please migrate publishers to '
+                f'{CANONICAL_MANUS_HAND_FRAME!r}.')
+            self._warned_legacy_hand_frame = True
 
         sample = {}
         for idx, name in enumerate(MANUS_FINGER_ORDER):

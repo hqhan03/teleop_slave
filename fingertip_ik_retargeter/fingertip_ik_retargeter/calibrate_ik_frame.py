@@ -1,4 +1,4 @@
-"""Capture a palm-local open-hand sample and save Manus->DG5F frame calibration."""
+"""Capture a wrist-local open-hand sample and save Manus->DG5F frame calibration."""
 
 from __future__ import annotations
 
@@ -17,7 +17,13 @@ from fingertip_ik_retargeter.frame_calibration import (
     DEFAULT_WORKSPACE_AXIS_SCALE,
     MANUS_FINGER_ORDER,
     compute_calibration,
+    find_dg5f_urdf,
     save_calibration,
+)
+from fingertip_ik_retargeter.manus_frames import (
+    CANONICAL_MANUS_HAND_FRAME,
+    LEGACY_MANUS_HAND_FRAME,
+    classify_manus_hand_frame,
 )
 
 
@@ -29,7 +35,7 @@ class IKFrameCalibrator(Node):
         self.declare_parameter('output_path', DEFAULT_CALIBRATION_PATH)
         self.declare_parameter('initial_joint_positions_deg', DEFAULT_REFERENCE_JOINTS_DEG.tolist())
 
-        urdf_path = self.get_parameter('urdf_path').value or self._find_urdf()
+        urdf_path = self.get_parameter('urdf_path').value or find_dg5f_urdf()
         if not os.path.exists(urdf_path):
             raise FileNotFoundError(f'URDF not found: {urdf_path}')
 
@@ -44,6 +50,8 @@ class IKFrameCalibrator(Node):
             initial_joint_positions=np.deg2rad(initial_joint_positions_deg),
         )
         self._dg5f_tips = self._solver.get_palm_fingertip_positions()
+        self._warned_legacy_hand_frame = False
+        self._warned_invalid_hand_frame = False
 
         self._sub = self.create_subscription(
             PoseArray,
@@ -54,31 +62,29 @@ class IKFrameCalibrator(Node):
 
         self.get_logger().info(
             f'IK frame calibration ready. Hold an open hand in front of the glove; '
-            f'capturing {self._sample_count} palm-local samples from /manus/fingertip_positions.')
+            f'capturing {self._sample_count} wrist-local samples from /manus/fingertip_positions.')
         self.get_logger().info(
             f'Using DG-5F reference pose for calibration (deg): '
             f'{np.round(initial_joint_positions_deg, 1).tolist()}')
-
-    def _find_urdf(self) -> str:
-        candidates = [
-            os.path.join(os.getcwd(), 'delto_m_ros2', 'dg_description', 'urdf', 'dg5f_right.urdf'),
-            os.path.join(os.getcwd(), 'install', 'dg_description', 'share',
-                         'dg_description', 'urdf', 'dg5f_right.urdf'),
-            os.path.expanduser('~/Desktop/tesollo_manus_teleop/delto_m_ros2/dg_description/urdf/dg5f_right.urdf'),
-        ]
-        for path in candidates:
-            if os.path.exists(path):
-                return path
-        return candidates[0]
 
     def _callback(self, msg: PoseArray):
         if len(msg.poses) < 5:
             self.get_logger().warn('Need 5 fingertip poses for calibration.', throttle_duration_sec=2.0)
             return
-        if msg.header.frame_id not in ('', 'manus_palm'):
+        frame_ok, is_legacy = classify_manus_hand_frame(msg.header.frame_id)
+        if not frame_ok:
+            if not self._warned_invalid_hand_frame:
+                self.get_logger().warn(
+                    f'Ignoring fingertip message in unexpected frame {msg.header.frame_id!r}. '
+                    f'Expected {CANONICAL_MANUS_HAND_FRAME!r} or legacy {LEGACY_MANUS_HAND_FRAME!r}.')
+                self._warned_invalid_hand_frame = True
+            return
+        if is_legacy and not self._warned_legacy_hand_frame:
             self.get_logger().warn(
-                f'Expected palm-local fingertips in frame manus_palm, got {msg.header.frame_id!r}.',
-                throttle_duration_sec=2.0)
+                f'Received legacy fingertip frame {LEGACY_MANUS_HAND_FRAME!r}; '
+                f'treating it as wrist-local. Please migrate publishers to '
+                f'{CANONICAL_MANUS_HAND_FRAME!r}.')
+            self._warned_legacy_hand_frame = True
 
         sample = {}
         for idx, name in enumerate(MANUS_FINGER_ORDER):
@@ -91,8 +97,7 @@ class IKFrameCalibrator(Node):
             return
 
         self._samples.append(sample)
-        remaining = self._sample_count - len(self._samples)
-        if remaining > 0:
+        if len(self._samples) < self._sample_count:
             self.get_logger().info(f'Captured calibration sample {len(self._samples)}/{self._sample_count}')
             return
 

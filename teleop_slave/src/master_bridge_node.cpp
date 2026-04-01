@@ -8,6 +8,10 @@
 #include <tf2/LinearMath/Quaternion.h>
 #include <tf2/LinearMath/Matrix3x3.h>
 
+namespace {
+constexpr char kManusHandFrameId[] = "manus_wrist_local";
+}
+
 ManusReceiverNode::ManusReceiverNode() : Node("manus_receiver_cpp"), sockfd_(-1) {
     this->declare_parameter("listen_port", 12345);
     listen_port_ = this->get_parameter("listen_port").as_int();
@@ -15,6 +19,7 @@ ManusReceiverNode::ManusReceiverNode() : Node("manus_receiver_cpp"), sockfd_(-1)
     wrist_pub_ = this->create_publisher<geometry_msgs::msg::PoseStamped>("manus/wrist_pose", 10);
     joint_pub_ = this->create_publisher<sensor_msgs::msg::JointState>("manus/finger_joints", 10);
     fingertip_pub_ = this->create_publisher<geometry_msgs::msg::PoseArray>("manus/fingertip_positions", 10);
+    landmark_pub_ = this->create_publisher<geometry_msgs::msg::PoseArray>("manus/hand_landmarks", 10);
 
     setup_udp();
 
@@ -66,7 +71,8 @@ void ManusReceiverNode::receive_callback() {
 
     ssize_t n = recvfrom(sockfd_, &packet, sizeof(packet), 0, (struct sockaddr *)&cliaddr, &len);
 
-    const ssize_t min_size = (ssize_t)(sizeof(HandDataPacket) - sizeof(packet.fingertipPos));
+    const ssize_t min_size = (ssize_t)(
+        sizeof(HandDataPacket) - sizeof(packet.fingertipPos) - sizeof(packet.landmarkPos));
 
     if (n > 0 && n < min_size) {
         RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 5000,
@@ -81,8 +87,12 @@ void ManusReceiverNode::receive_callback() {
                 n, packet.frame, inet_ntoa(cliaddr.sin_addr));
         }
         packet_count_++;
-        // Zero out fingertipPos if old sender sends smaller packet
+        // Zero out fields if old sender sends smaller packet (backward compat)
+        const ssize_t size_without_landmarks = (ssize_t)(sizeof(HandDataPacket) - sizeof(packet.landmarkPos));
         if (n < (ssize_t)sizeof(HandDataPacket)) {
+            memset(packet.landmarkPos, 0, sizeof(packet.landmarkPos));
+        }
+        if (n < size_without_landmarks) {
             memset(packet.fingertipPos, 0, sizeof(packet.fingertipPos));
         }
         publish_data(packet);
@@ -181,10 +191,10 @@ void ManusReceiverNode::publish_data(const HandDataPacket& packet) {
     printf("  Pinky:  MCP_Ab/Ad=%.2f MCP_Fl/Ex=%.2f PIP_Fl/Ex=%.2f DIP_Fl/Ex=%.2f\n",
         packet.fingerFlexion[16], packet.fingerFlexion[17], packet.fingerFlexion[18], packet.fingerFlexion[19]);
 
-    // 3. 데이터 퍼블리시 (Palm-local raw skeleton fingertip positions)
+    // 3. 데이터 퍼블리시 (wrist-local raw skeleton fingertip positions)
     auto fingertip_msg = geometry_msgs::msg::PoseArray();
     fingertip_msg.header.stamp = now;
-    fingertip_msg.header.frame_id = "manus_palm";
+    fingertip_msg.header.frame_id = kManusHandFrameId;
 
     const char* fingerNames[5] = {"Thumb", "Index", "Middle", "Ring", "Pinky"};
     bool hasFingertipData = false;
@@ -206,11 +216,35 @@ void ManusReceiverNode::publish_data(const HandDataPacket& packet) {
 
     // 터미널에 Fingertip 위치 출력
     if (hasFingertipData) {
-        printf("[Fingertip Positions (Raw Skeleton Palm Frame)]\n");
+        printf("[Fingertip Positions (Raw Skeleton Wrist-Local Frame)]\n");
         for (int f = 0; f < 5; f++) {
             printf("  %-7s: X:%.4f Y:%.4f Z:%.4f\n", fingerNames[f],
                 packet.fingertipPos[f * 3 + 0], packet.fingertipPos[f * 3 + 1], packet.fingertipPos[f * 3 + 2]);
         }
+    }
+
+    // 4. 데이터 퍼블리시 (25 hand landmarks for keyvector retargeting)
+    // Order: 5 fingers × 5 joints (Metacarpal, Proximal, Intermediate, Distal, Tip)
+    bool hasLandmarkData = false;
+    for (int i = 0; i < 75; i++) {
+        if (packet.landmarkPos[i] != 0.0f) { hasLandmarkData = true; break; }
+    }
+    if (hasLandmarkData) {
+        auto landmark_msg = geometry_msgs::msg::PoseArray();
+        landmark_msg.header.stamp = now;
+        landmark_msg.header.frame_id = kManusHandFrameId;
+        for (int i = 0; i < 25; i++) {
+            geometry_msgs::msg::Pose pose;
+            pose.position.x = packet.landmarkPos[i * 3 + 0];
+            pose.position.y = packet.landmarkPos[i * 3 + 1];
+            pose.position.z = packet.landmarkPos[i * 3 + 2];
+            pose.orientation.w = 1.0;
+            pose.orientation.x = 0.0;
+            pose.orientation.y = 0.0;
+            pose.orientation.z = 0.0;
+            landmark_msg.poses.push_back(pose);
+        }
+        landmark_pub_->publish(landmark_msg);
     }
 }
 

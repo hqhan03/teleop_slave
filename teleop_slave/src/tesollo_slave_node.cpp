@@ -257,13 +257,7 @@ void TesolloSlaveNode::fingerJointsCallback(const sensor_msgs::msg::JointState::
 
     // ── Build and publish JointTrajectory ──
     auto traj_msg = trajectory_msgs::msg::JointTrajectory();
-    traj_msg.joint_names = {
-        "rj_dg_1_1", "rj_dg_1_2", "rj_dg_1_3", "rj_dg_1_4",
-        "rj_dg_2_1", "rj_dg_2_2", "rj_dg_2_3", "rj_dg_2_4",
-        "rj_dg_3_1", "rj_dg_3_2", "rj_dg_3_3", "rj_dg_3_4",
-        "rj_dg_4_1", "rj_dg_4_2", "rj_dg_4_3", "rj_dg_4_4",
-        "rj_dg_5_1", "rj_dg_5_2", "rj_dg_5_3", "rj_dg_5_4"
-    };
+    traj_msg.joint_names = DG5F_JOINT_NAMES;
 
     auto point = trajectory_msgs::msg::JointTrajectoryPoint();
     point.positions = delto_target;
@@ -292,13 +286,7 @@ void TesolloSlaveNode::calibrateNeutralCallback(
 
     // Command the Tesollo to the neutral pose
     auto traj_msg = trajectory_msgs::msg::JointTrajectory();
-    traj_msg.joint_names = {
-        "rj_dg_1_1", "rj_dg_1_2", "rj_dg_1_3", "rj_dg_1_4",
-        "rj_dg_2_1", "rj_dg_2_2", "rj_dg_2_3", "rj_dg_2_4",
-        "rj_dg_3_1", "rj_dg_3_2", "rj_dg_3_3", "rj_dg_3_4",
-        "rj_dg_4_1", "rj_dg_4_2", "rj_dg_4_3", "rj_dg_4_4",
-        "rj_dg_5_1", "rj_dg_5_2", "rj_dg_5_3", "rj_dg_5_4"
-    };
+    traj_msg.joint_names = DG5F_JOINT_NAMES;
     auto point = trajectory_msgs::msg::JointTrajectoryPoint();
     point.positions.assign(neutral_tesollo_rad_.begin(), neutral_tesollo_rad_.end());
     point.time_from_start.sec = 2;
@@ -687,13 +675,7 @@ void TesolloSlaveNode::calibMPResetCb(
 // =============================================================================
 void TesolloSlaveNode::commandCalibPose(int pose_idx) {
     auto traj_msg = trajectory_msgs::msg::JointTrajectory();
-    traj_msg.joint_names = {
-        "rj_dg_1_1", "rj_dg_1_2", "rj_dg_1_3", "rj_dg_1_4",
-        "rj_dg_2_1", "rj_dg_2_2", "rj_dg_2_3", "rj_dg_2_4",
-        "rj_dg_3_1", "rj_dg_3_2", "rj_dg_3_3", "rj_dg_3_4",
-        "rj_dg_4_1", "rj_dg_4_2", "rj_dg_4_3", "rj_dg_4_4",
-        "rj_dg_5_1", "rj_dg_5_2", "rj_dg_5_3", "rj_dg_5_4"
-    };
+    traj_msg.joint_names = DG5F_JOINT_NAMES;
 
     auto point = trajectory_msgs::msg::JointTrajectoryPoint();
     point.positions.assign(calib_pose_targets_[pose_idx].begin(),

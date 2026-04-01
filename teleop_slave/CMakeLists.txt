@@ -17,8 +17,10 @@ find_package(tf2_geometry_msgs REQUIRED)
 find_package(hardware_interface REQUIRED)
 find_package(pluginlib REQUIRED)
 find_package(rclcpp_lifecycle REQUIRED)
+find_package(message_filters REQUIRED)
 find_package(Boost REQUIRED COMPONENTS system)
 find_package(yaml-cpp REQUIRED)
+find_package(ruckig REQUIRED)
 find_package(ament_cmake_gtest QUIET)
 
 add_library(delto_tcp_comm SHARED libdelto/delto_tcp_comm/src/delto_developer_TCP.cpp)
@@ -59,12 +61,13 @@ target_include_directories(fairino_lowlevel_controller_node PUBLIC
 )
 target_link_libraries(fairino_lowlevel_controller_node
   fr5_teleop_utils
+  ruckig::ruckig
 )
 ament_target_dependencies(fairino_lowlevel_controller_node rclcpp std_msgs sensor_msgs std_srvs geometry_msgs tf2 tf2_geometry_msgs)
 
 add_executable(fairino_slave_node src/fairino_slave_node.cpp)
 target_include_directories(fairino_slave_node PUBLIC include)
-target_link_libraries(fairino_slave_node fr5_teleop_utils yaml-cpp)
+target_link_libraries(fairino_slave_node fr5_teleop_utils)
 ament_target_dependencies(fairino_slave_node rclcpp geometry_msgs sensor_msgs std_srvs tf2 tf2_geometry_msgs)
 
 add_executable(tesollo_slave_node src/tesollo_slave_node.cpp)
@@ -77,12 +80,24 @@ ament_target_dependencies(tesollo_slave_node
   std_srvs
 )
 
+add_executable(teleop_csv_logger_node src/teleop_csv_logger_node.cpp)
+target_include_directories(teleop_csv_logger_node PUBLIC include)
+ament_target_dependencies(teleop_csv_logger_node
+  rclcpp
+  sensor_msgs
+  geometry_msgs
+  message_filters
+  tf2
+  tf2_geometry_msgs
+)
+
 install(TARGETS
   fr5_teleop_utils
   master_bridge_node
   fairino_lowlevel_controller_node
   fairino_slave_node
   tesollo_slave_node
+  teleop_csv_logger_node
   RUNTIME DESTINATION lib/${PROJECT_NAME}
   ARCHIVE DESTINATION lib
   LIBRARY DESTINATION lib)
@@ -122,6 +137,7 @@ install(DIRECTORY
 install(PROGRAMS
   src/manus_retarget_vendor.py
   src/manus_retarget_vendor
+  scripts/calibrate_tracker_frame.py
   DESTINATION lib/${PROJECT_NAME}
 )
 
@@ -131,7 +147,7 @@ if(ament_cmake_gtest_FOUND)
   )
   if(TARGET test_fr5_teleop_utils)
     target_link_libraries(test_fr5_teleop_utils fr5_teleop_utils)
-    ament_target_dependencies(test_fr5_teleop_utils geometry_msgs tf2)
+    ament_target_dependencies(test_fr5_teleop_utils geometry_msgs tf2 tf2_geometry_msgs)
   endif()
 endif()
 

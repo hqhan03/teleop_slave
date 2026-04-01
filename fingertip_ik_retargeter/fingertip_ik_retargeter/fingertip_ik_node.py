@@ -1,7 +1,8 @@
 """
 Fingertip IK Retargeting Node for Tesollo DG-5F.
 
-Subscribes to Manus glove fingertip positions, solves IK via PyBullet,
+Subscribes to Manus glove fingertip positions in a wrist-local hand frame,
+solves IK via PyBullet,
 and publishes joint commands to the DG-5F hand.
 """
 
@@ -23,7 +24,13 @@ from fingertip_ik_retargeter.frame_calibration import (
     DEFAULT_CALIBRATION_PATH,
     MANUS_FINGER_ORDER,
     apply_axis_mapping,
+    find_dg5f_urdf,
     load_calibration,
+)
+from fingertip_ik_retargeter.manus_frames import (
+    CANONICAL_MANUS_HAND_FRAME,
+    LEGACY_MANUS_HAND_FRAME,
+    classify_manus_hand_frame,
 )
 
 
@@ -52,7 +59,6 @@ class FingertipIKNode(Node):
         self.declare_parameter('finger_target_scales', [1.0, 1.0, 1.0, 1.0, 1.0])
         self.declare_parameter('thumb_target_scale', 1.35)
         self.declare_parameter('prevent_hyperextension', True)
-        self.declare_parameter('publish_rate', 50.0)
         self.declare_parameter('log_every_n_frames', 100)
         self.declare_parameter('input_frame_mode', 'palm_local')
         self.declare_parameter('calibration_file', DEFAULT_CALIBRATION_PATH)
@@ -106,7 +112,7 @@ class FingertipIKNode(Node):
 
         # Resolve URDF path
         if not urdf_path:
-            urdf_path = self._find_urdf()
+            urdf_path = find_dg5f_urdf()
         if not os.path.exists(urdf_path):
             self.get_logger().fatal(f'URDF not found: {urdf_path}')
             raise FileNotFoundError(f'URDF not found: {urdf_path}')
@@ -153,13 +159,17 @@ class FingertipIKNode(Node):
                 'from tracker world into the palm frame using /manus/wrist_pose')
         else:
             self.get_logger().info(
-                'Palm-local mode ENABLED — consuming /manus/fingertip_positions '
-                'directly in the MANUS palm frame')
+                'Hand-local mode ENABLED — consuming /manus/fingertip_positions '
+                f'directly in the Manus wrist-local frame ({CANONICAL_MANUS_HAND_FRAME})')
         self.get_logger().info(
             f'Axis remap: DG5F[X,Y,Z] <- Manus[{self._manus_to_dg5f_axes}] '
             f'* {self._manus_to_dg5f_signs.tolist()}')
 
         self._msg_count = 0
+        self._first_wrist_logged = False
+        self._first_msg_logged = False
+        self._warned_legacy_hand_frame = False
+        self._warned_invalid_hand_frame = False
 
         enabled_list = [n for n, e in self._enabled_fingers.items() if e]
         self.get_logger().info(f'Enabled fingers: {enabled_list}')
@@ -203,22 +213,6 @@ class FingertipIKNode(Node):
         )
         self.get_logger().info(f'Loaded frame calibration from {self._calibration_file}')
 
-    def _find_urdf(self) -> str:
-        """Try to find the DG-5F URDF in common locations."""
-        candidates = [
-            # Relative to workspace
-            os.path.join(os.getcwd(), 'delto_m_ros2', 'dg_description', 'urdf', 'dg5f_right.urdf'),
-            # Installed via colcon
-            os.path.join(os.getcwd(), 'install', 'dg_description', 'share',
-                         'dg_description', 'urdf', 'dg5f_right.urdf'),
-            # Absolute path in source tree
-            os.path.expanduser('~/Desktop/tesollo_manus_teleop/delto_m_ros2/dg_description/urdf/dg5f_right.urdf'),
-        ]
-        for path in candidates:
-            if os.path.exists(path):
-                return path
-        return candidates[0]  # Return first candidate (will fail with clear error)
-
     def _wrist_callback(self, msg: PoseStamped):
         """Cache wrist position and inverse rotation matrix."""
         p = msg.pose.position
@@ -227,7 +221,7 @@ class FingertipIKNode(Node):
         rot = _quat_to_rotation_matrix(q.w, q.x, q.y, q.z)
         self._wrist_inv_rot = rot.T  # inverse of rotation matrix = transpose
 
-        if not hasattr(self, '_first_wrist_logged'):
+        if not self._first_wrist_logged:
             self._first_wrist_logged = True
             self.get_logger().info(
                 f'First wrist pose received: pos=[{p.x:.4f}, {p.y:.4f}, {p.z:.4f}] '
@@ -246,7 +240,7 @@ class FingertipIKNode(Node):
                 throttle_duration_sec=2.0)
             return
 
-        if not hasattr(self, '_first_msg_logged'):
+        if not self._first_msg_logged:
             self._first_msg_logged = True
             self.get_logger().info(
                 f'First message received on /manus/fingertip_positions '
@@ -269,11 +263,21 @@ class FingertipIKNode(Node):
                 throttle_duration_sec=5.0)
             return
 
-        if self._input_frame_mode == 'palm_local' and msg.header.frame_id not in ('', 'manus_palm'):
-            self.get_logger().warn(
-                f'Expected palm-local fingertips in frame manus_palm, got {msg.header.frame_id!r}. '
-                'If you are using the old sender, switch input_frame_mode to legacy_tracker_world.',
-                throttle_duration_sec=5.0)
+        if self._input_frame_mode == 'palm_local':
+            frame_ok, is_legacy = classify_manus_hand_frame(msg.header.frame_id)
+            if not frame_ok:
+                if not self._warned_invalid_hand_frame:
+                    self.get_logger().warn(
+                        f'Ignoring fingertip message in unexpected frame {msg.header.frame_id!r}. '
+                        f'Expected {CANONICAL_MANUS_HAND_FRAME!r} or legacy {LEGACY_MANUS_HAND_FRAME!r}.')
+                    self._warned_invalid_hand_frame = True
+                return
+            if is_legacy and not self._warned_legacy_hand_frame:
+                self.get_logger().warn(
+                    f'Received legacy fingertip frame {LEGACY_MANUS_HAND_FRAME!r}; '
+                    f'treating it as wrist-local. Please migrate publishers to '
+                    f'{CANONICAL_MANUS_HAND_FRAME!r}.')
+                self._warned_legacy_hand_frame = True
 
         # Extract fingertip positions and apply calibration/remapping
         fingertip_targets = {}
@@ -287,12 +291,10 @@ class FingertipIKNode(Node):
                 pos = self._tracker_world_to_palm(pos)
 
             pos = apply_axis_mapping(pos, self._manus_to_dg5f_axes, self._manus_to_dg5f_signs)
-            pos = pos * self._hand_scale
-            pos = pos * self._workspace_axis_scale
-            pos = pos * self._finger_target_scales.get(finger_name, 1.0)
+            scale = self._hand_scale * self._workspace_axis_scale * self._finger_target_scales.get(finger_name, 1.0)
             if finger_name == 'thumb':
-                pos = pos * self._thumb_target_scale
-            pos = pos + self._palm_offset
+                scale = scale * self._thumb_target_scale
+            pos = pos * scale + self._palm_offset
             fingertip_targets[finger_name] = pos
 
         # Solve IK

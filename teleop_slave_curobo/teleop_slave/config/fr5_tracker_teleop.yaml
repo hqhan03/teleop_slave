@@ -1,0 +1,40 @@
+fairino_slave_node:
+  ros__parameters:
+    orientation_mode: "full_6dof"
+    tracker_to_robot_axes: [1, 0, 2]
+    tracker_to_robot_signs: [1.0, -1.0, 1.0]
+    tracker_to_robot_rpy_deg: [36.8, -86.5, -81.3]
+    translation_scale_xyz: [1.0, 1.0, 1.0]
+    workspace_radius: 0.85
+    min_xyz: [-0.85, -0.85, 0.05]
+    max_xyz: [0.85, 0.85, 1.10]
+    max_linear_step_m: 0.015
+    max_angular_step_deg: 12.0
+    filter_cutoff_hz: 8.0
+    filter_sample_rate_hz: 50.0
+    orientation_smoothing_alpha: 0.6
+    position_deadzone_m: 0.002
+
+fairino_lowlevel_controller_node:
+  ros__parameters:
+    robot_ip: "192.168.58.2"
+    stream_command_mode: "servo_j"
+    global_speed_percent: 30
+    expected_tcp_id: -1
+    expected_wobj_id: -1
+    ik_failure_limit: 5
+    ik_failure_timeout_sec: 0.75
+    allow_orientation_fallback: true
+    ik_position_backoff_steps: 4
+    pose_target_timeout_sec: 0.30
+    interpolate_stream: true
+    servo_cmd_period_sec: 0.008
+    pose_target_nominal_period_sec: 0.02
+    servocart_filter_t: 0.0
+    servocart_gain: 0.0
+    servoj_max_step_deg: 0.8
+    servoj_filter_t: 0.01
+    servoj_gain: 0.0
+    servoj_failure_limit: 3
+    joint_deadband_deg: [0.12, 0.12, 0.12, 0.12, 0.12, 0.12]
+    joint_velocity_limit_deg_s: [35.0, 35.0, 40.0, 120.0, 120.0, 150.0]

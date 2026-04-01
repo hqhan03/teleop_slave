@@ -1,12 +1,15 @@
 #include <gtest/gtest.h>
 
+#include <chrono>
 #include <functional>
 
 #include <geometry_msgs/msg/pose_stamped.hpp>
 #include <tf2/LinearMath/Quaternion.h>
 
+#include "teleop_slave/cartesian_pose_stream_interpolator.hpp"
 #include "teleop_slave/fairino_robot_interface.hpp"
 #include "teleop_slave/fr5_teleop_utils.hpp"
+#include "teleop_slave/joint_target_smoother.hpp"
 
 namespace {
 
@@ -22,6 +25,11 @@ public:
     errno_t ServoMoveStart() override { return 0; }
     errno_t ServoMoveEnd() override { return 0; }
     errno_t ServoJ(JointPos*, ExaxisPos*, float, float, float, float, float, int) override { return 0; }
+    errno_t ServoCart(int, DescPose* desc_pos, ExaxisPos, float[6], float, float, float, float, float) override {
+        last_servo_cart_pose = *desc_pos;
+        servo_cart_calls++;
+        return servo_cart_ret;
+    }
 
     errno_t GetActualJointPosDegree(uint8_t, JointPos* jpos) override {
         *jpos = actual_joint_pos;
@@ -68,13 +76,16 @@ public:
     JointPos solved_joint_pos{1.0, 2.0, 3.0, 4.0, 5.0, 6.0};
     DescPose actual_tcp_pose{100.0, 200.0, 300.0, 10.0, 20.0, 30.0};
     DescPose last_desc_pose{};
+    DescPose last_servo_cart_pose{};
     int actual_tcp_id{3};
     int actual_wobj_id{1};
     uint8_t has_solution{1};
+    int servo_cart_calls{0};
     errno_t get_joint_ret{0};
     errno_t get_tcp_pose_ret{0};
     errno_t get_tcp_num_ret{0};
     errno_t get_wobj_num_ret{0};
+    errno_t servo_cart_ret{0};
     errno_t ik_has_solution_ret{0};
     errno_t ik_ref_ret{0};
     int error_main{11};
@@ -195,6 +206,30 @@ TEST(Fr5TeleopUtilsTest, ComputeMappedOrientationRemapsTrackerAxesToCandidateRob
     EXPECT_NEAR(teleop_slave::QuaternionAngularDistanceDegrees(mapped_yaw, expected_roll), 0.0, 1e-6);
 }
 
+TEST(Fr5TeleopUtilsTest, ComputeMappedOrientationWorksWithNonIdentityZero) {
+    const tf2::Quaternion base(0.0, 0.0, 0.0, 1.0);
+    const tf2::Quaternion basis = teleop_slave::QuaternionFromRPYDegrees(
+        tf2::Vector3(0.0, 0.0, 0.0));
+
+    // Clutch (zero) at 45 deg yaw — non-identity reference orientation
+    tf2::Quaternion zero;
+    zero.setRPY(0.0, 0.0, M_PI / 4.0);
+
+    // Rotate tracker by 0.25 rad roll in tracker LOCAL frame:
+    // q_current = q_zero * Rx_local(0.25)
+    tf2::Quaternion local_roll;
+    local_roll.setRPY(0.25, 0.0, 0.0);
+    tf2::Quaternion current = zero * local_roll;
+
+    // With identity basis, body-frame roll should map to robot roll
+    tf2::Quaternion expected;
+    expected.setRPY(0.25, 0.0, 0.0);
+
+    const tf2::Quaternion result = teleop_slave::ComputeMappedOrientation(
+        base, zero, current, basis, teleop_slave::OrientationMode::kFull6Dof);
+    EXPECT_NEAR(teleop_slave::QuaternionAngularDistanceDegrees(result, expected), 0.0, 0.5);
+}
+
 TEST(Fr5TeleopUtilsTest, ClampPoseTargetLimitsStepAndWorkspace) {
     geometry_msgs::msg::Pose previous = MakePose(0.1, 0.0, 0.4, 0.0, 0.0, 0.0);
     geometry_msgs::msg::Pose candidate = MakePose(0.5, 0.5, 1.5, 0.0, 0.0, 1.5);
@@ -213,6 +248,161 @@ TEST(Fr5TeleopUtilsTest, ClampPoseTargetLimitsStepAndWorkspace) {
               0.050001);
     EXPECT_LE(clamped_pos.length(), 0.700001);
     EXPECT_GE(clamped.position.z, 0.1);
+}
+
+TEST(Fr5TeleopUtilsTest, CartesianPoseStreamInterpolatorSeedsFromActualPose) {
+    teleop_slave::CartesianPoseStreamInterpolator interpolator;
+    const auto now = std::chrono::steady_clock::now();
+    const geometry_msgs::msg::Pose actual_pose = MakePose(0.2, -0.1, 0.45, 0.1, -0.2, 0.3);
+
+    interpolator.reset(actual_pose, now);
+    const auto sampled = interpolator.sample(now);
+
+    EXPECT_NEAR(sampled.position.x, actual_pose.position.x, 1e-9);
+    EXPECT_NEAR(sampled.position.y, actual_pose.position.y, 1e-9);
+    EXPECT_NEAR(sampled.position.z, actual_pose.position.z, 1e-9);
+
+    tf2::Quaternion sampled_q;
+    tf2::Quaternion actual_q;
+    tf2::fromMsg(sampled.orientation, sampled_q);
+    tf2::fromMsg(actual_pose.orientation, actual_q);
+    EXPECT_NEAR(teleop_slave::QuaternionAngularDistanceDegrees(sampled_q, actual_q), 0.0, 1e-6);
+}
+
+TEST(Fr5TeleopUtilsTest, CartesianPoseStreamInterpolatorBlendsFirstTargetOverNominalPeriod) {
+    teleop_slave::CartesianPoseStreamInterpolator interpolator;
+    const auto now = std::chrono::steady_clock::now();
+    const geometry_msgs::msg::Pose actual_pose = MakePose(0.0, 0.0, 0.5, 0.0, 0.0, 0.0);
+    const geometry_msgs::msg::Pose target_pose = MakePose(0.1, 0.0, 0.5, 0.0, 0.0, M_PI / 2.0);
+
+    interpolator.reset(actual_pose, now);
+    interpolator.setTarget(target_pose, now, 0.02, true);
+
+    const auto immediate = interpolator.sample(now);
+    const auto final = interpolator.sample(now + std::chrono::milliseconds(20));
+
+    EXPECT_NEAR(immediate.position.x, actual_pose.position.x, 1e-9);
+    EXPECT_NEAR(immediate.position.y, actual_pose.position.y, 1e-9);
+    EXPECT_NEAR(final.position.x, target_pose.position.x, 1e-9);
+    EXPECT_NEAR(final.position.y, target_pose.position.y, 1e-9);
+
+    tf2::Quaternion immediate_q;
+    tf2::Quaternion actual_q;
+    tf2::Quaternion final_q;
+    tf2::Quaternion target_q;
+    tf2::fromMsg(immediate.orientation, immediate_q);
+    tf2::fromMsg(actual_pose.orientation, actual_q);
+    tf2::fromMsg(final.orientation, final_q);
+    tf2::fromMsg(target_pose.orientation, target_q);
+    EXPECT_NEAR(teleop_slave::QuaternionAngularDistanceDegrees(immediate_q, actual_q), 0.0, 1e-6);
+    EXPECT_NEAR(teleop_slave::QuaternionAngularDistanceDegrees(final_q, target_q), 0.0, 1e-6);
+}
+
+TEST(Fr5TeleopUtilsTest, CartesianPoseStreamInterpolatorUsesLinearPositionAndSlerpOrientation) {
+    teleop_slave::CartesianPoseStreamInterpolator interpolator;
+    const auto now = std::chrono::steady_clock::now();
+    const geometry_msgs::msg::Pose from_pose = MakePose(0.0, 0.0, 0.4, 0.0, 0.0, 0.0);
+    const geometry_msgs::msg::Pose to_pose = MakePose(0.2, -0.1, 0.6, 0.0, 0.0, M_PI / 2.0);
+
+    interpolator.reset(from_pose, now);
+    interpolator.setTarget(to_pose, now, 0.02, true);
+    const auto halfway = interpolator.sample(now + std::chrono::milliseconds(10));
+
+    EXPECT_NEAR(halfway.position.x, 0.1, 1e-9);
+    EXPECT_NEAR(halfway.position.y, -0.05, 1e-9);
+    EXPECT_NEAR(halfway.position.z, 0.5, 1e-9);
+
+    tf2::Quaternion halfway_q;
+    tf2::Quaternion from_q;
+    tf2::fromMsg(halfway.orientation, halfway_q);
+    tf2::fromMsg(from_pose.orientation, from_q);
+    EXPECT_NEAR(teleop_slave::QuaternionAngularDistanceDegrees(from_q, halfway_q), 45.0, 1e-6);
+}
+
+TEST(Fr5TeleopUtilsTest, ComputeIncrementalPoseDeltaBaseFrameReturnsExpectedTranslationAndRotation) {
+    const geometry_msgs::msg::Pose from_pose = MakePose(0.1, -0.2, 0.3, 0.0, 0.0, 0.0);
+    const geometry_msgs::msg::Pose to_pose = MakePose(0.12, -0.18, 0.29, 0.0, 0.0, 0.1);
+
+    const geometry_msgs::msg::Pose delta =
+        teleop_slave::ComputeIncrementalPoseDeltaBaseFrame(from_pose, to_pose);
+
+    EXPECT_NEAR(delta.position.x, 0.02, 1e-9);
+    EXPECT_NEAR(delta.position.y, 0.02, 1e-9);
+    EXPECT_NEAR(delta.position.z, -0.01, 1e-9);
+
+    tf2::Quaternion identity_q;
+    identity_q.setRPY(0.0, 0.0, 0.0);
+    tf2::Quaternion delta_q;
+    tf2::fromMsg(delta.orientation, delta_q);
+    EXPECT_NEAR(teleop_slave::QuaternionAngularDistanceDegrees(identity_q, delta_q),
+                0.1 * 180.0 / M_PI,
+                1e-6);
+}
+
+TEST(Fr5TeleopUtilsTest, ComputeIncrementalPoseDeltaBaseFrameReturnsIdentityForEqualPoses) {
+    const geometry_msgs::msg::Pose pose = MakePose(0.2, 0.1, 0.4, 0.2, -0.1, 0.3);
+
+    const geometry_msgs::msg::Pose delta =
+        teleop_slave::ComputeIncrementalPoseDeltaBaseFrame(pose, pose);
+
+    EXPECT_NEAR(delta.position.x, 0.0, 1e-9);
+    EXPECT_NEAR(delta.position.y, 0.0, 1e-9);
+    EXPECT_NEAR(delta.position.z, 0.0, 1e-9);
+
+    tf2::Quaternion delta_q;
+    tf2::Quaternion identity_q;
+    tf2::fromMsg(delta.orientation, delta_q);
+    identity_q.setRPY(0.0, 0.0, 0.0);
+    EXPECT_NEAR(teleop_slave::QuaternionAngularDistanceDegrees(identity_q, delta_q), 0.0, 1e-6);
+}
+
+TEST(Fr5TeleopUtilsTest, JointTargetSmootherDeadbandHoldsSmallJ123Jitter) {
+    teleop_slave::JointTargetSmoother smoother;
+    smoother.configure(
+        {0.08, 0.08, 0.08, 0.12, 0.12, 0.12},
+        {35.0, 35.0, 40.0, 120.0, 120.0, 150.0});
+    smoother.reset({0.0, 0.0, 0.0, 0.0, 0.0, 0.0});
+
+    const auto result = smoother.update({0.05, -0.06, 0.07, 0.0, 0.0, 0.0}, 0.02);
+
+    EXPECT_FALSE(result.held_due_to_invalid_dt);
+    EXPECT_DOUBLE_EQ(result.filtered_target_deg[0], 0.0);
+    EXPECT_DOUBLE_EQ(result.filtered_target_deg[1], 0.0);
+    EXPECT_DOUBLE_EQ(result.filtered_target_deg[2], 0.0);
+}
+
+TEST(Fr5TeleopUtilsTest, JointTargetSmootherRespectsPerJointVelocityLimits) {
+    teleop_slave::JointTargetSmoother smoother;
+    smoother.configure(
+        {0.08, 0.08, 0.08, 0.12, 0.12, 0.12},
+        {35.0, 35.0, 40.0, 120.0, 120.0, 150.0});
+    smoother.reset({0.0, 0.0, 0.0, 0.0, 0.0, 0.0});
+
+    const auto result = smoother.update({10.0, -10.0, 10.0, 10.0, -10.0, 10.0}, 0.02);
+
+    EXPECT_NEAR(result.filtered_target_deg[0], 0.7, 1e-9);
+    EXPECT_NEAR(result.filtered_target_deg[1], -0.7, 1e-9);
+    EXPECT_NEAR(result.filtered_target_deg[2], 0.8, 1e-9);
+    EXPECT_NEAR(result.filtered_target_deg[3], 2.4, 1e-9);
+    EXPECT_NEAR(result.filtered_target_deg[4], -2.4, 1e-9);
+    EXPECT_NEAR(result.filtered_target_deg[5], 3.0, 1e-9);
+}
+
+TEST(Fr5TeleopUtilsTest, JointTargetSmootherHoldsLastTargetForInvalidDt) {
+    teleop_slave::JointTargetSmoother smoother;
+    smoother.configure(
+        {0.08, 0.08, 0.08, 0.12, 0.12, 0.12},
+        {35.0, 35.0, 40.0, 120.0, 120.0, 150.0});
+    smoother.reset({0.0, 0.0, 0.0, 0.0, 0.0, 0.0});
+
+    const auto seeded = smoother.update({2.0, 0.0, 0.0, 0.0, 0.0, 0.0}, 0.02);
+    const auto held = smoother.update({10.0, 10.0, 10.0, 10.0, 10.0, 10.0}, 0.0);
+
+    EXPECT_FALSE(seeded.held_due_to_invalid_dt);
+    EXPECT_TRUE(held.held_due_to_invalid_dt);
+    EXPECT_NEAR(held.filtered_target_deg[0], seeded.filtered_target_deg[0], 1e-9);
+    EXPECT_NEAR(held.filtered_target_deg[1], seeded.filtered_target_deg[1], 1e-9);
+    EXPECT_NEAR(held.filtered_target_deg[2], seeded.filtered_target_deg[2], 1e-9);
 }
 
 TEST(Fr5TeleopUtilsTest, PoseConversionRoundTripsMetersAndEulerPose) {

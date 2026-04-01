@@ -1,0 +1,32 @@
+diff --git a/fairino_hardware/libfairino/lib/libfairino.so b/fairino_hardware/libfairino/lib/libfairino.so
+deleted file mode 100644
+index c7c41f3..0000000
+--- a/fairino_hardware/libfairino/lib/libfairino.so
++++ /dev/null
+@@ -1 +0,0 @@
+-libfairino.so.2
+\ No newline at end of file
+diff --git a/fairino_hardware/libfairino/lib/libfairino.so b/fairino_hardware/libfairino/lib/libfairino.so
+new file mode 120000
+index 0000000..fe633b9
+--- /dev/null
++++ b/fairino_hardware/libfairino/lib/libfairino.so
+@@ -0,0 +1 @@
++/home/nrel/Desktop/tesollo_manus_teleop/frcobot_ros2/fairino_hardware/libfairino/lib/libfairino.so.2
+\ No newline at end of file
+diff --git a/fairino_hardware/libfairino/lib/libfairino.so.2 b/fairino_hardware/libfairino/lib/libfairino.so.2
+deleted file mode 100644
+index bbf40b2..0000000
+--- a/fairino_hardware/libfairino/lib/libfairino.so.2
++++ /dev/null
+@@ -1 +0,0 @@
+-libfairino.so.2.3.4
+\ No newline at end of file
+diff --git a/fairino_hardware/libfairino/lib/libfairino.so.2 b/fairino_hardware/libfairino/lib/libfairino.so.2
+new file mode 120000
+index 0000000..69634c5
+--- /dev/null
++++ b/fairino_hardware/libfairino/lib/libfairino.so.2
+@@ -0,0 +1 @@
++/home/nrel/Desktop/tesollo_manus_teleop/frcobot_ros2/fairino_hardware/libfairino/lib/libfairino.so.2.3.4
+\ No newline at end of file

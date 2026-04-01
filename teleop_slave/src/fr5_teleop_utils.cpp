@@ -122,7 +122,7 @@ tf2::Quaternion ComputeMappedOrientation(const tf2::Quaternion& base_robot_orien
         return NormalizeQuaternion(base_robot_orientation);
     }
 
-    tf2::Quaternion tracker_delta = tracker_current_orientation * tracker_zero_orientation.inverse();
+    tf2::Quaternion tracker_delta = tracker_zero_orientation.inverse() * tracker_current_orientation;
     tracker_delta = NormalizeQuaternion(tracker_delta);
 
     tf2::Quaternion mapped_delta =

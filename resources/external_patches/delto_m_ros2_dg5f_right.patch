@@ -1,0 +1,76 @@
+diff --git a/dg_description/urdf/dg5f_right.urdf b/dg_description/urdf/dg5f_right.urdf
+index 97e4197..400f7d0 100644
+--- a/dg_description/urdf/dg5f_right.urdf
++++ b/dg_description/urdf/dg5f_right.urdf
+@@ -102,7 +102,7 @@
+     <parent link="rl_dg_palm" />
+     <child link="rl_dg_1_1" />
+     <axis xyz="1 0 0" />
+-    <limit lower="-0.3839724354387525" upper="0.8901179185171081" effort="7.5" velocity="3.141592653589793"/>
++    <limit lower="-0.3839724354387525" upper="1.3439035240356338" effort="7.5" velocity="3.141592653589793"/>
+   </joint>
+ 
+   <link name="rl_dg_1_2">
+@@ -129,7 +129,7 @@
+     <parent link="rl_dg_1_1" />
+     <child link="rl_dg_1_2" />
+     <axis xyz="0 0 1" />
+-    <limit lower="-3.141592653589793" upper="0.0" effort="7.5" velocity="3.141592653589793"/>
++    <limit lower="-2.7052603405912107" upper="0.0" effort="7.5" velocity="3.141592653589793"/>
+   </joint>
+ 
+   <link name="rl_dg_1_3">
+@@ -235,7 +235,7 @@
+     <parent link="rl_dg_palm" />
+     <child link="rl_dg_2_1" />
+     <axis xyz="1 0 0" />
+-    <limit lower="-0.4188790204786391" upper="0.6108652381980153" effort="7.5" velocity="3.141592653589793"/>
++    <limit lower="-0.5410520681182422" upper="0.3490658503988659" effort="7.5" velocity="3.141592653589793"/>
+   </joint>
+ 
+   <link name="rl_dg_2_2">
+@@ -368,7 +368,7 @@
+     <parent link="rl_dg_palm" />
+     <child link="rl_dg_3_1" />
+     <axis xyz="1 0 0" />
+-    <limit lower="-0.6108652381980153" upper="0.6108652381980153" effort="7.5" velocity="3.141592653589793"/>
++    <limit lower="-0.5235987755982988" upper="0.5235987755982988" effort="7.5" velocity="3.141592653589793"/>
+   </joint>
+ 
+   <link name="rl_dg_3_2">
+@@ -395,7 +395,7 @@
+     <parent link="rl_dg_3_1" />
+     <child link="rl_dg_3_2" />
+     <axis xyz="0 1 0" />
+-    <limit lower="0.0" upper="1.9547687622336491" effort="7.5" velocity="3.141592653589793"/>
++    <limit lower="0.0" upper="2.007128639793479" effort="7.5" velocity="3.141592653589793"/>
+   </joint>
+ 
+   <link name="rl_dg_3_3">
+@@ -501,7 +501,7 @@
+     <parent link="rl_dg_palm" />
+     <child link="rl_dg_4_1" />
+     <axis xyz="1 0 0" />
+-    <limit lower="-0.6108652381980153" upper="0.4188790204786391" effort="7.5" velocity="3.141592653589793"/>
++    <limit lower="-0.2617993877991494" upper="0.5585053606381855" effort="7.5" velocity="3.141592653589793"/>
+   </joint>
+ 
+   <link name="rl_dg_4_2">
+@@ -528,7 +528,7 @@
+     <parent link="rl_dg_4_1" />
+     <child link="rl_dg_4_2" />
+     <axis xyz="0 1 0" />
+-    <limit lower="0.0" upper="1.9024088846738192" effort="7.5" velocity="3.141592653589793"/>
++    <limit lower="0.0" upper="1.9198621771937625" effort="7.5" velocity="3.141592653589793"/>
+   </joint>
+ 
+   <link name="rl_dg_4_3">
+@@ -661,7 +661,7 @@
+     <parent link="rl_dg_5_1" />
+     <child link="rl_dg_5_2" />
+     <axis xyz="1 0 0" />
+-    <limit lower="-0.4188790204786391" upper="0.6108652381980153" effort="7.5" velocity="3.141592653589793"/>
++    <limit lower="-0.2617993877991494" upper="1.5707963267948966" effort="7.5" velocity="3.141592653589793"/>
+   </joint>
+ 
+   <link name="rl_dg_5_3">

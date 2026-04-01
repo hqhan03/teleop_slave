@@ -23,7 +23,10 @@ struct HandDataPacket {
     float wristPos[3];
     float wristQuaternion[4]; // w, x, y, z
     float fingerFlexion[20];
-    float fingertipPos[15]; // 5 fingertips × (X, Y, Z) in MANUS palm-local frame
+    float fingertipPos[15]; // 5 fingertips × (X, Y, Z) in MANUS wrist-local frame
+    float landmarkPos[75]; // 25 hand landmarks × (X, Y, Z) in wrist-local frame
+                           // Order: 5 fingers × 5 joints (Metacarpal, Proximal, Intermediate, Distal, Tip)
+                           // Finger order: Thumb, Index, Middle, Ring, Pinky
 };
 #pragma pack(pop)
 
@@ -48,6 +51,7 @@ private:
     rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr wrist_pub_;
     rclcpp::Publisher<sensor_msgs::msg::JointState>::SharedPtr joint_pub_;
     rclcpp::Publisher<geometry_msgs::msg::PoseArray>::SharedPtr fingertip_pub_;
+    rclcpp::Publisher<geometry_msgs::msg::PoseArray>::SharedPtr landmark_pub_;
     rclcpp::TimerBase::SharedPtr timer_;
 };
 

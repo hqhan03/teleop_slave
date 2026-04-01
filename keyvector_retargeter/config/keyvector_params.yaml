@@ -1,0 +1,29 @@
+keyvector_retarget_node:
+  ros__parameters:
+    urdf_path: ""
+    calibration_file: "~/.ros/manus_dg5f_keyvector.yaml"
+    dummy_mode: false
+    control_rate_hz: 50.0
+    publish_time_from_start_sec: 0.0
+    epsilon_contact_m: 0.015
+    eta_thumb_close_m: 0.008
+    eta_interfinger_sep_m: 0.018
+    lambda_smooth: 0.0
+    solver_max_nfev: 20
+    solver_tol: 1.0e-4
+    dropout_hold_sec: 0.2
+    recovery_alpha: 0.15
+    joint_prior_enabled: true
+    joint_prior_timeout_sec: 0.10
+    prior_seed_alpha: 0.7
+    joint_prior_weight_flex: 0.05
+    joint_prior_weight_spread: 0.03
+    max_flex_velocity_deg_s: 480.0
+    max_spread_velocity_deg_s: 300.0
+    reference_joint_positions_deg: [
+      0.0, 0.0, 0.0, 0.0,
+      0.0, 0.0, 0.0, 0.0,
+      0.0, 0.0, 0.0, 0.0,
+      0.0, 0.0, 0.0, 0.0,
+      0.0, 0.0, 0.0, 0.0
+    ]

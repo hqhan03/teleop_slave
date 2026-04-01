@@ -21,7 +21,7 @@ If you only read one package README on the Linux side, read this one.
 The FR5 path is split into two nodes:
 
 - `fairino_slave_node` maps tracker motion into a target end-effector pose
-- `fairino_lowlevel_controller_node` validates controller state, solves IK with the Fairino SDK, and streams `ServoJ`
+- `fairino_lowlevel_controller_node` validates controller state, solves IK with the Fairino SDK, and streams `ServoCart` or `ServoJ`
 
 ### DG-5F direct joint mapping
 
@@ -38,6 +38,7 @@ If you want fingertip-based hand teleop instead, use `fingertip_ik_retargeter` i
   - `/manus/wrist_pose`
   - `/manus/finger_joints`
   - `/manus/fingertip_positions`
+  - `/manus/hand_landmarks`
 
 ### `fairino_slave_node`
 
@@ -53,12 +54,7 @@ If you want fingertip-based hand teleop instead, use `fingertip_ik_retargeter` i
 - queries the Fairino controller state
 - converts the ROS target pose into the Fairino `DescPose` format
 - calls the built-in Fairino inverse kinematics
-- sends `ServoJ` joint commands
-
-### `fairino_state_printer_node`
-
-- prints the live robot state to the terminal
-- useful when debugging robot pose, joints, or streaming behavior
+- sends `ServoCart` or `ServoJ` commands, depending on `stream_command_mode`
 
 ### `tesollo_slave_node`
 
@@ -66,6 +62,13 @@ If you want fingertip-based hand teleop instead, use `fingertip_ik_retargeter` i
 - maps MANUS joint values to DG-5F joint targets
 - supports single-pose and multi-pose calibration
 - publishes to the DG-5F trajectory controller topic
+
+### `teleop_csv_logger_node`
+
+- subscribes to synchronized Tesollo joint states and the FR5 `/robot_pose`
+- records only synchronized Tesollo/Fairino message pairs
+- writes CSV logs at the configured logging rate
+- toggles recording with `Space`
 
 ## Data Flow
 
@@ -80,7 +83,7 @@ teleop_master
   -> /fr5/pose_target
   -> fairino_lowlevel_controller_node
   -> Fairino SDK IK
-  -> ServoJ
+  -> ServoCart or ServoJ
   -> FR5
 ```
 
@@ -112,29 +115,25 @@ source install/setup.bash
 
 ### `config/fr5_tracker_teleop.yaml`
 
-Main FR5 teleop parameters. This is the base config passed with `--params-file`. It includes:
+Main FR5 teleop parameter file. This is the single config passed with `--params-file`. It includes:
 
 - `orientation_mode`
 - tracker-to-robot axis mapping
 - tracker-to-robot orientation basis
 - workspace limits
+- global FR5 controller speed
 - IK safety settings
+- controller connection and ServoCart/ServoJ settings
 
-The repo default tracker orientation basis is still identity:
+`fairino_lowlevel_controller_node` now reads `global_speed_percent` from this YAML and applies it with `SetSpeed(...)` during startup. The current YAML default is `30`.
 
-```yaml
-tracker_to_robot_rpy_deg: [0.0, 0.0, 0.0]
-```
-
-That basis keeps tracker roll, pitch, and yaw aligned with the robot end-effector roll, pitch, and yaw axes if the tracker frame already matches the tool frame.
-
-For hardware calibration, use the runtime override template in `config/fr5_tracker_calibration.yaml`. That file is not loaded automatically unless the `calibration_file` parameter points to it or you copy it to the default override path. It starts from this candidate basis:
+The tracker orientation basis now lives directly in this file. The current candidate basis is:
 
 ```yaml
-tracker_to_robot_rpy_deg: [0.0, -90.0, 180.0]
+tracker_to_robot_rpy_deg: [-90.0, 180.0, 0.0]
 ```
 
-That candidate is meant for the observed symptom where tracker roll drove robot yaw, tracker yaw drove robot roll, and tracker pitch was inverted.
+That candidate is meant for the observed symptom where tracker roll drove robot yaw, tracker yaw drove robot roll, and tracker pitch was inverted. Edit `tracker_to_robot_rpy_deg` in this file directly when tuning on hardware.
 
 ### `config/tesollo_params.yaml`
 
@@ -144,35 +143,6 @@ Main parameter file for direct DG-5F hand mapping. This includes:
 - per-joint gains
 - neutral pose targets
 - motor min and max limits
-
-### `~/.ros/fr5_tracker_calibration.yaml`
-
-Optional runtime override file for FR5 tracker calibration. If present, it can override:
-
-- axis mapping
-- axis signs
-- scaling
-- orientation basis
-- orientation mode
-
-Runtime precedence is:
-
-1. Load base FR5 parameters from `config/fr5_tracker_teleop.yaml` passed via `--params-file`
-2. Read the `calibration_file` parameter from that base config
-3. If the override file exists, replace overlapping calibration values with the override contents
-
-That is why there are two FR5 YAML files:
-
-- `config/fr5_tracker_teleop.yaml` is the main runtime config
-- `config/fr5_tracker_calibration.yaml` is a calibration template for the optional override layer
-
-You can create it by copying `config/fr5_tracker_calibration.yaml`, or point the node at the repo copy directly:
-
-```bash
-ros2 run teleop_slave fairino_slave_node \
-  --ros-args --params-file teleop_slave/config/fr5_tracker_teleop.yaml \
-  -p calibration_file:=/home/nrel/Desktop/tesollo_manus_teleop/teleop_slave/config/fr5_tracker_calibration.yaml
-```
 
 Suggested manual tuning loop:
 
@@ -185,8 +155,6 @@ Suggested manual tuning loop:
 
 At startup, `fairino_slave_node` now logs:
 
-- whether the calibration override file was found
-- which source is active for calibration values
 - the raw loaded `tracker_to_robot_rpy_deg`
 - the effective stored quaternion as `basis_quat_xyzw`
 
@@ -233,6 +201,74 @@ ros2 run teleop_slave fairino_slave_node \
 ```
 
 After all three are running, press `Space` in the `fairino_slave_node` terminal. That clutches the tracker to the current robot pose and starts pose streaming.
+
+## Current NREL Hardware Workflow
+
+This is the current full Linux runtime flow for the setup you are actively using: FR5 arm teleop, DG-5F keyvector retargeting, and CSV logging.
+
+Before starting the Linux terminals below:
+
+1. Start `teleop_master` on Windows and confirm it is sending UDP packets to this Linux host.
+2. Verify the FR5 controller is reachable at `192.168.58.2`.
+3. Verify the DG-5F is reachable at `169.254.186.72`.
+4. Keep the robot e-stop accessible.
+
+Terminal 1: FR5 low-level controller
+
+```bash
+source /opt/ros/jazzy/setup.bash
+source install/setup.bash
+ros2 run teleop_slave fairino_lowlevel_controller_node \
+  --ros-args --params-file teleop_slave/config/fr5_tracker_teleop.yaml \
+  -p robot_ip:=192.168.58.2
+```
+
+Terminal 2: FR5 tracker teleop mapper
+
+```bash
+source /opt/ros/jazzy/setup.bash
+source install/setup.bash
+ros2 run teleop_slave fairino_slave_node \
+  --ros-args --params-file teleop_slave/config/fr5_tracker_teleop.yaml
+```
+
+Terminal 3: MANUS UDP bridge
+
+```bash
+source /opt/ros/jazzy/setup.bash
+source install/setup.bash
+ros2 run teleop_slave master_bridge_node
+```
+
+Terminal 4: DG-5F right-hand driver
+
+```bash
+source /opt/ros/jazzy/setup.bash
+source install/setup.bash
+ros2 launch dg5f_driver dg5f_right_driver.launch.py delto_ip:=169.254.186.72
+```
+
+Terminal 5: DG-5F keyvector retargeter
+
+```bash
+source /opt/ros/jazzy/setup.bash
+source install/setup.bash
+ros2 launch keyvector_retargeter keyvector_retarget.launch.py
+```
+
+Terminal 6: Teleop CSV logger
+
+```bash
+source /opt/ros/jazzy/setup.bash
+source install/setup.bash
+ros2 run teleop_slave teleop_csv_logger_node
+```
+
+After startup:
+
+1. Press `Space` in the `fairino_slave_node` terminal to clutch the tracker to the current robot pose.
+2. Press `Space` in the `teleop_csv_logger_node` terminal to start and stop CSV recording.
+3. Do not run `tesollo_slave_node`, `manus_retarget_vendor`, `fingertip_ik_retargeter`, and `keyvector_retargeter` together. Only one DG-5F command source should be active.
 
 ### Dummy FR5 run
 
@@ -395,14 +431,16 @@ You have two hand teleop options in this workspace:
 
 - direct MANUS joint mapping with `tesollo_slave_node`
 - fingertip IK with `fingertip_ik_retargeter`
+- keyvector retargeting with `keyvector_retargeter`
 
-Do not run both at the same time, because both publish DG-5F trajectory commands.
+Do not run more than one at the same time, because they publish competing DG-5F trajectory commands.
 
 ## Useful Topics
 
 - `/manus/wrist_pose`
 - `/manus/finger_joints`
 - `/manus/fingertip_positions`
+- `/manus/hand_landmarks`
 - `/fr5/pose_target`
 - `/robot_joint_states`
 - `/robot_pose`

@@ -12,6 +12,7 @@
 #include <tf2/LinearMath/Quaternion.h>
 #include <tf2/LinearMath/Vector3.h>
 
+#include "teleop_slave/butterworth_filter.hpp"
 #include "teleop_slave/fr5_teleop_utils.hpp"
 
 class FairinoSlaveNode : public rclcpp::Node {
@@ -25,7 +26,6 @@ private:
     void startStreaming();
     void stopStreaming();
     void keyboardThread();
-    void loadCalibrationOverrides();
     void logCalibrationConfiguration() const;
 
     geometry_msgs::msg::PoseStamped buildTargetPose(
@@ -55,14 +55,18 @@ private:
     tf2::Vector3 max_xyz_{0.85, 0.85, 1.10};
     tf2::Quaternion tracker_to_robot_basis_{0.0, 0.0, 0.0, 1.0};
     teleop_slave::OrientationMode orientation_mode_{teleop_slave::OrientationMode::kPositionOnly};
-    std::string calibration_file_checked_;
-    std::string calibration_source_{"base_params"};
-    bool calibration_override_loaded_{false};
 
     tf2::Vector3 clutch_tracker_position_;
     tf2::Vector3 base_robot_position_;
     tf2::Quaternion tracker_zero_orientation_{0.0, 0.0, 0.0, 1.0};
     tf2::Quaternion base_robot_orientation_{0.0, 0.0, 0.0, 1.0};
+
+    geometry_msgs::msg::Pose smoothed_target_pose_;
+    bool smoothing_initialized_{false};
+    std::array<teleop_slave::ButterworthFilter2, 3> position_filters_;
+    bool butterworth_configured_{false};
+    int clutch_warmup_remaining_{0};
+    static constexpr int CLUTCH_WARMUP_SAMPLES = 10;
 };
 
 #endif  // FAIRINO_SLAVE_NODE_HPP_

@@ -1,9 +1,10 @@
-"""Shared frame-calibration helpers for Manus palm-local -> DG-5F palm-local mapping."""
+"""Shared frame-calibration helpers for Manus wrist-local -> DG-5F palm-local mapping."""
 
 from __future__ import annotations
 
 import itertools
 import os
+from pathlib import Path
 from typing import Dict
 
 import numpy as np
@@ -14,6 +15,24 @@ MANUS_FINGER_ORDER = ['thumb', 'index', 'middle', 'ring', 'pinky']
 DEFAULT_CALIBRATION_PATH = os.path.expanduser('~/.ros/manus_dg5f_ik_frame.yaml')
 DEFAULT_WORKSPACE_AXIS_SCALE = [1.0, 1.0, 1.0]
 DEFAULT_FINGER_TARGET_SCALES = [1.0, 1.0, 1.0, 1.0, 1.0]
+
+_DG5F_URDF_FILENAME = os.path.join('delto_m_ros2', 'dg_description', 'urdf', 'dg5f_right.urdf')
+
+
+def find_dg5f_urdf() -> str:
+    """Try to find the DG-5F URDF in common locations."""
+    packaged_urdf = Path(__file__).resolve().parent / 'data' / 'dg5f_right_local.urdf'
+    candidates = [
+        str(packaged_urdf),
+        os.path.join(os.getcwd(), _DG5F_URDF_FILENAME),
+        os.path.join(os.getcwd(), 'install', 'dg_description', 'share',
+                     'dg_description', 'urdf', 'dg5f_right.urdf'),
+        os.path.expanduser(os.path.join('~/Desktop/tesollo_manus_teleop', _DG5F_URDF_FILENAME)),
+    ]
+    for path in candidates:
+        if os.path.exists(path):
+            return path
+    return candidates[0]
 
 # Multi-pose calibration targets copied from the existing Tesollo calibration
 # flow so the user can match the same intuitive poses with the Manus glove.
@@ -73,6 +92,94 @@ DG5F_MULTI_POSE_CALIBRATION = [
             0.0, 50.0, 0.0, 0.0,
         ],
     },
+    {
+        'name': 'kapandji_index',
+        'description': 'KAPANDJI INDEX \u2014 touch thumb tip to index fingertip',
+        'joint_positions_deg': [
+            51.0, -60.6, 21.2, 7.5,
+            1.1, 75.6, 31.5, 10.9,
+            15.0, 15.0, 10.0, 5.0,
+            15.0, 15.0, 10.0, 5.0,
+            10.0, 10.0, 10.0, 5.0,
+        ],
+    },
+    {
+        'name': 'kapandji_middle',
+        'description': 'KAPANDJI MIDDLE \u2014 touch thumb tip to middle fingertip',
+        'joint_positions_deg': [
+            51.0, -69.6, 32.8, 13.3,
+            15.0, 15.0, 10.0, 5.0,
+            1.2, 78.1, 34.9, 11.6,
+            15.0, 15.0, 10.0, 5.0,
+            10.0, 10.0, 10.0, 5.0,
+        ],
+    },
+    {
+        'name': 'kapandji_ring',
+        'description': 'KAPANDJI RING \u2014 touch thumb tip to ring fingertip',
+        'joint_positions_deg': [
+            15.1, -109.2, 35.6, 13.7,
+            15.0, 15.0, 10.0, 5.0,
+            15.0, 15.0, 10.0, 5.0,
+            0.5, 77.6, 38.1, 16.0,
+            10.0, 10.0, 10.0, 5.0,
+        ],
+    },
+    {
+        'name': 'kapandji_pinky',
+        'description': 'KAPANDJI PINKY \u2014 touch thumb tip to pinky fingertip',
+        'joint_positions_deg': [
+            -4.2, -130.5, 30.8, 12.5,
+            15.0, 15.0, 10.0, 5.0,
+            15.0, 15.0, 10.0, 5.0,
+            15.0, 15.0, 10.0, 5.0,
+            16.7, 34.1, 76.1, 42.1,
+        ],
+    },
+    {
+        'name': 'tight_fist',
+        'description': 'TIGHT FIST \u2014 all five fingers fully flexed',
+        'joint_positions_deg': [
+            30.0, -150.0, 45.0, 45.0,      # thumb: tucked across fingers
+            0.0, 110.0, 85.0, 85.0,        # index: near-max flexion
+            0.0, 108.0, 85.0, 85.0,        # middle: near-max flexion
+            0.0, 105.0, 85.0, 85.0,        # ring: near-max flexion
+            0.0, 0.0, 85.0, 85.0,          # pinky: near-max flexion (joints 3,4)
+        ],
+    },
+    {
+        'name': 'thumb_adducted',
+        'description': 'THUMB ADDUCTED \u2014 Motor 1 at minimum (-22\u00b0), fingers extended',
+        'joint_positions_deg': [
+            -22.0, -100.0, 0.0, 0.0,       # thumb: full adduction, moderate flexion
+            0.0, 0.0, 0.0, 0.0,            # index: extended
+            0.0, 0.0, 0.0, 0.0,            # middle: extended
+            0.0, 0.0, 0.0, 0.0,            # ring: extended
+            0.0, 0.0, 0.0, 0.0,            # pinky: extended
+        ],
+    },
+    {
+        'name': 'thumb_opposition_open',
+        'description': 'THUMB OPPOSITION OPEN \u2014 Motor 2 near 0\u00b0 (thumb extended outward)',
+        'joint_positions_deg': [
+            40.0, -10.0, 0.0, 0.0,         # thumb: moderate abduction, Motor 2 near 0 (extended)
+            0.0, 0.0, 0.0, 0.0,            # index: extended
+            0.0, 0.0, 0.0, 0.0,            # middle: extended
+            0.0, 0.0, 0.0, 0.0,            # ring: extended
+            0.0, 0.0, 0.0, 0.0,            # pinky: extended
+        ],
+    },
+    {
+        'name': 'thumb_opposition_closed',
+        'description': 'THUMB OPPOSITION CLOSED \u2014 Motor 2 near -150\u00b0 (thumb fully opposed across palm)',
+        'joint_positions_deg': [
+            40.0, -150.0, 0.0, 0.0,        # thumb: moderate abduction, Motor 2 near max opposition
+            0.0, 0.0, 0.0, 0.0,            # index: extended
+            0.0, 0.0, 0.0, 0.0,            # middle: extended
+            0.0, 0.0, 0.0, 0.0,            # ring: extended
+            0.0, 0.0, 0.0, 0.0,            # pinky: extended
+        ],
+    },
 ]
 
 
@@ -87,14 +194,14 @@ def apply_axis_mapping(pos: np.ndarray, axes, signs) -> np.ndarray:
     """Apply a signed permutation axis mapping."""
     arr = np.asarray(pos, dtype=float)
     return np.array([
-        float(signs[0]) * arr[int(axes[0])],
-        float(signs[1]) * arr[int(axes[1])],
-        float(signs[2]) * arr[int(axes[2])],
+        signs[0] * arr[axes[0]],
+        signs[1] * arr[axes[1]],
+        signs[2] * arr[axes[2]],
     ], dtype=float)
 
 
 def _compute_hand_basis(fingertips: Dict[str, np.ndarray]) -> np.ndarray:
-    """Compute an orthonormal palm basis from palm-local fingertip positions."""
+    """Compute an orthonormal hand basis from wrist-local fingertip positions."""
     thumb = np.asarray(fingertips['thumb'], dtype=float)
     index = np.asarray(fingertips['index'], dtype=float)
     middle = np.asarray(fingertips['middle'], dtype=float)
@@ -110,7 +217,7 @@ def _compute_hand_basis(fingertips: Dict[str, np.ndarray]) -> np.ndarray:
 
 def compute_signed_permutation(manus_tips: Dict[str, np.ndarray],
                                dg5f_tips: Dict[str, np.ndarray]):
-    """Find the best signed-permutation that maps Manus palm axes into DG-5F palm axes."""
+    """Find the best signed-permutation that maps Manus wrist-local axes into DG-5F palm axes."""
     manus_basis = _compute_hand_basis(manus_tips)
     dg5f_basis = _compute_hand_basis(dg5f_tips)
     alignment = dg5f_basis.T @ manus_basis

@@ -11,22 +11,7 @@ import os
 import numpy as np
 
 from fingertip_ik_retargeter.dg5f_ik_solver import DG5FIKSolver, ALL_JOINT_NAMES
-
-
-def _resolve_urdf(cli_path: str) -> str:
-    if cli_path:
-        return cli_path
-
-    cwd = os.getcwd()
-    candidates = [
-        os.path.join(cwd, 'delto_m_ros2', 'dg_description', 'urdf', 'dg5f_right.urdf'),
-        os.path.join(cwd, 'install', 'dg_description', 'share', 'dg_description', 'urdf', 'dg5f_right.urdf'),
-        os.path.expanduser('~/Desktop/tesollo_manus_teleop/delto_m_ros2/dg_description/urdf/dg5f_right.urdf'),
-    ]
-    for path in candidates:
-        if os.path.exists(path):
-            return path
-    return candidates[0]
+from fingertip_ik_retargeter.frame_calibration import find_dg5f_urdf
 
 
 def _build_targets(rest_tips: dict[str, np.ndarray], profile: str) -> dict[str, np.ndarray]:
@@ -61,7 +46,7 @@ def main() -> int:
                         help='PyBullet IK damping value')
     args = parser.parse_args()
 
-    urdf_path = _resolve_urdf(args.urdf)
+    urdf_path = args.urdf or find_dg5f_urdf()
     if not os.path.exists(urdf_path):
         print(f'URDF not found: {urdf_path}')
         return 1

@@ -21,8 +21,10 @@
   <depend>hardware_interface</depend>
   <depend>pluginlib</depend>
   <depend>rclcpp_lifecycle</depend>
+  <depend>message_filters</depend>
   <depend>boost</depend>
   <depend>yaml-cpp</depend>
+  <depend>ruckig</depend>
 
   <test_depend>ament_lint_auto</test_depend>
   <test_depend>ament_lint_common</test_depend>

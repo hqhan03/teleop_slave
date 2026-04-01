@@ -2,40 +2,12 @@
 
 #include <chrono>
 #include <cmath>
-#include <fstream>
 #include <stdexcept>
 
 #include <termios.h>
 #include <unistd.h>
-#include <yaml-cpp/yaml.h>
 
 #include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
-
-namespace {
-
-template <typename T>
-std::array<T, 3> ReadArray3(const YAML::Node& node, const std::array<T, 3>& fallback) {
-    if (!node || !node.IsSequence() || node.size() != 3) {
-        return fallback;
-    }
-
-    return {node[0].as<T>(), node[1].as<T>(), node[2].as<T>()};
-}
-
-YAML::Node LoadCalibrationNode(const std::string& path) {
-    std::ifstream input(path);
-    if (!input.good()) {
-        return YAML::Node();
-    }
-
-    YAML::Node root = YAML::LoadFile(path);
-    if (root["fairino_slave_node"] && root["fairino_slave_node"]["ros__parameters"]) {
-        return root["fairino_slave_node"]["ros__parameters"];
-    }
-    return root;
-}
-
-}  // namespace
 
 FairinoSlaveNode::FairinoSlaveNode() : Node("fairino_slave_node") {
     this->declare_parameter("workspace_radius", 0.85);
@@ -48,7 +20,10 @@ FairinoSlaveNode::FairinoSlaveNode() : Node("fairino_slave_node") {
     this->declare_parameter("translation_scale_xyz", std::vector<double>{1.0, 1.0, 1.0});
     this->declare_parameter("tracker_to_robot_rpy_deg", std::vector<double>{0.0, 0.0, 0.0});
     this->declare_parameter("orientation_mode", "position_only");
-    this->declare_parameter("calibration_file", "~/.ros/fr5_tracker_calibration.yaml");
+    this->declare_parameter("filter_cutoff_hz", 5.0);
+    this->declare_parameter("filter_sample_rate_hz", 50.0);
+    this->declare_parameter("orientation_smoothing_alpha", 0.3);
+    this->declare_parameter("position_deadzone_m", 0.001);
 
     const auto axes = this->get_parameter("tracker_to_robot_axes").as_integer_array();
     if (axes.size() != 3) {
@@ -94,7 +69,6 @@ FairinoSlaveNode::FairinoSlaveNode() : Node("fairino_slave_node") {
     orientation_mode_ = teleop_slave::ParseOrientationMode(
         this->get_parameter("orientation_mode").as_string());
 
-    loadCalibrationOverrides();
     logCalibrationConfiguration();
 
     manus_sub_ = this->create_subscription<geometry_msgs::msg::PoseStamped>(
@@ -123,59 +97,9 @@ FairinoSlaveNode::~FairinoSlaveNode() {
     }
 }
 
-void FairinoSlaveNode::loadCalibrationOverrides() {
-    calibration_file_checked_ = teleop_slave::ExpandUserPath(
-        this->get_parameter("calibration_file").as_string());
-    const YAML::Node root = LoadCalibrationNode(calibration_file_checked_);
-    if (!root) {
-        RCLCPP_INFO(this->get_logger(),
-                    "No tracker calibration override found at %s. Using base FR5 params from "
-                    "--params-file / node parameters.",
-                    calibration_file_checked_.c_str());
-        return;
-    }
-
-    calibration_override_loaded_ = true;
-    calibration_source_ = calibration_file_checked_;
-    tracker_to_robot_axes_ = ReadArray3<int>(root["tracker_to_robot_axes"], tracker_to_robot_axes_);
-    tracker_to_robot_signs_ =
-        ReadArray3<double>(root["tracker_to_robot_signs"], tracker_to_robot_signs_);
-
-    const auto scale = ReadArray3<double>(
-        root["translation_scale_xyz"],
-        {translation_scale_xyz_.x(), translation_scale_xyz_.y(), translation_scale_xyz_.z()});
-    translation_scale_xyz_.setValue(scale[0], scale[1], scale[2]);
-
-    if (root["tracker_to_robot_rpy_deg"]) {
-        const auto basis = ReadArray3<double>(root["tracker_to_robot_rpy_deg"], {0.0, 0.0, 0.0});
-        for (size_t i = 0; i < 3; ++i) {
-            tracker_to_robot_basis_rpy_deg_[i] = basis[i];
-        }
-        tracker_to_robot_basis_ = teleop_slave::QuaternionFromRPYDegrees(
-            tf2::Vector3(tracker_to_robot_basis_rpy_deg_[0],
-                         tracker_to_robot_basis_rpy_deg_[1],
-                         tracker_to_robot_basis_rpy_deg_[2]));
-    }
-
-    if (root["orientation_mode"]) {
-        orientation_mode_ =
-            teleop_slave::ParseOrientationMode(root["orientation_mode"].as<std::string>());
-    }
-
-    RCLCPP_INFO(this->get_logger(), "Loaded tracker calibration override from %s",
-                calibration_file_checked_.c_str());
-}
-
 void FairinoSlaveNode::logCalibrationConfiguration() const {
     RCLCPP_INFO(this->get_logger(),
-                "FR5 base config source: values loaded from --params-file / node parameters");
-    RCLCPP_INFO(this->get_logger(),
-                "FR5 calibration override: %s (checked path: %s)",
-                calibration_override_loaded_ ? "loaded" : "not found; base params active",
-                calibration_file_checked_.c_str());
-    RCLCPP_INFO(this->get_logger(),
-                "Tracker calibration source: %s",
-                calibration_source_.c_str());
+                "FR5 tracker config source: values loaded from --params-file / node parameters");
     RCLCPP_INFO(this->get_logger(),
                 "Tracker calibration: axes=[%d, %d, %d] signs=[%.1f, %.1f, %.1f] "
                 "scale=[%.3f, %.3f, %.3f] raw_basis_rpy_deg=[%.1f, %.1f, %.1f] "
@@ -259,6 +183,18 @@ geometry_msgs::msg::PoseStamped FairinoSlaveNode::buildTargetPose(
     target.pose.position.z = desired_position.z();
     target.pose.orientation = tf2::toMsg(desired_orientation);
 
+    const double deadzone = this->get_parameter("position_deadzone_m").as_double();
+    if (clutch_initialized_ && deadzone > 0.0) {
+        const tf2::Vector3 last_pos(last_target_pose_.position.x,
+                                    last_target_pose_.position.y,
+                                    last_target_pose_.position.z);
+        if ((desired_position - last_pos).length() < deadzone) {
+            target.pose.position.x = last_pos.x();
+            target.pose.position.y = last_pos.y();
+            target.pose.position.z = last_pos.z();
+        }
+    }
+
     const geometry_msgs::msg::Pose* previous = clutch_initialized_ ? &last_target_pose_ : nullptr;
     target.pose = teleop_slave::ClampPoseTarget(
         target.pose,
@@ -299,16 +235,58 @@ void FairinoSlaveNode::manusPoseCallback(const geometry_msgs::msg::PoseStamped::
         tf2::fromMsg(latest_robot_pose_.pose.orientation, base_robot_orientation_);
         tf2::fromMsg(msg->pose.orientation, tracker_zero_orientation_);
         last_target_pose_ = latest_robot_pose_.pose;
+        smoothed_target_pose_ = latest_robot_pose_.pose;
+
+        const double cutoff = this->get_parameter("filter_cutoff_hz").as_double();
+        const double sample_rate = this->get_parameter("filter_sample_rate_hz").as_double();
+        for (auto& f : position_filters_) {
+            f.configure(cutoff, sample_rate);
+        }
+        position_filters_[0].reset(latest_robot_pose_.pose.position.x);
+        position_filters_[1].reset(latest_robot_pose_.pose.position.y);
+        position_filters_[2].reset(latest_robot_pose_.pose.position.z);
+        butterworth_configured_ = true;
+
+        smoothing_initialized_ = true;
         clutch_initialized_ = true;
+        clutch_warmup_remaining_ = CLUTCH_WARMUP_SAMPLES;
         offset_set_ = false;
 
         RCLCPP_INFO(this->get_logger(),
-                    "Tracker clutch set to robot pose [%.3f, %.3f, %.3f]",
-                    base_robot_position_.x(), base_robot_position_.y(), base_robot_position_.z());
+                    "Tracker clutch set to robot pose [%.3f, %.3f, %.3f]. "
+                    "Warming up filter (%d samples)...",
+                    base_robot_position_.x(), base_robot_position_.y(), base_robot_position_.z(),
+                    CLUTCH_WARMUP_SAMPLES);
     }
 
-    const geometry_msgs::msg::PoseStamped target = buildTargetPose(*msg);
+    geometry_msgs::msg::PoseStamped target = buildTargetPose(*msg);
+
+    if (butterworth_configured_ && smoothing_initialized_) {
+        target.pose.position.x = position_filters_[0].filter(target.pose.position.x);
+        target.pose.position.y = position_filters_[1].filter(target.pose.position.y);
+        target.pose.position.z = position_filters_[2].filter(target.pose.position.z);
+
+        const double ori_alpha = std::clamp(
+            this->get_parameter("orientation_smoothing_alpha").as_double(), 0.0, 1.0);
+        if (ori_alpha < 1.0) {
+            tf2::Quaternion prev_q, new_q;
+            tf2::fromMsg(smoothed_target_pose_.orientation, prev_q);
+            tf2::fromMsg(target.pose.orientation, new_q);
+            target.pose.orientation = tf2::toMsg(prev_q.slerp(new_q, ori_alpha).normalized());
+        }
+    }
+    smoothed_target_pose_ = target.pose;
+    smoothing_initialized_ = true;
+
     last_target_pose_ = target.pose;
+
+    if (clutch_warmup_remaining_ > 0) {
+        --clutch_warmup_remaining_;
+        if (clutch_warmup_remaining_ == 0) {
+            RCLCPP_INFO(this->get_logger(), "Filter warmup complete. Streaming active.");
+        }
+        return;
+    }
 
     if (streaming_started_) {
         fr5_pose_pub_->publish(target);
@@ -358,6 +336,8 @@ void FairinoSlaveNode::stopStreaming() {
             if (response->success) {
                 streaming_started_ = false;
                 clutch_initialized_ = false;
+                smoothing_initialized_ = false;
+                butterworth_configured_ = false;
                 RCLCPP_INFO(this->get_logger(), "FR5 pose streaming disabled");
             } else {
                 RCLCPP_ERROR(this->get_logger(), "Failed to disable streaming: %s",

@@ -10,7 +10,8 @@ fingertip_ik_node:
     dummy_mode: false
 
     # Input frame mode for /manus/fingertip_positions:
-    # - palm_local: MANUS sender already publishes palm-local fingertips (recommended)
+    # - palm_local: MANUS sender already publishes wrist-local fingertips
+    #               (canonical frame_id: manus_wrist_local; legacy alias: manus_palm)
     # - legacy_tracker_world: old sender published tracker/world-like fingertips
     input_frame_mode: "palm_local"
 
@@ -57,7 +58,7 @@ fingertip_ik_node:
     # This should match the robot pose you consider the neutral/open hand.
     initial_joint_positions_deg: [77.0, -80.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
 
-    # Axis remapping from Manus palm frame to DG-5F palm frame
+    # Axis remapping from Manus wrist-local frame to DG-5F palm frame
     # Each entry is the Manus axis index that maps to the corresponding DG-5F axis
     # DG5F_X ← Manus_Y (axis 1), DG5F_Y ← Manus_Z (axis 2), DG5F_Z ← Manus_X (axis 0)
     manus_to_dg5f_axes: [1, 2, 0]

@@ -41,6 +41,12 @@ errno_t FairinoRobotSdkAdapter::ServoJ(JointPos* joint_pos, ExaxisPos* axis_pos,
     return robot_.ServoJ(joint_pos, axis_pos, acc, vel, cmd_t, filter_t, gain, id);
 }
 
+errno_t FairinoRobotSdkAdapter::ServoCart(int mode, DescPose* desc_pose, ExaxisPos axis_pos,
+                                          float pos_gain[6], float acc, float vel,
+                                          float cmd_t, float filter_t, float gain) {
+    return robot_.ServoCart(mode, desc_pose, axis_pos, pos_gain, acc, vel, cmd_t, filter_t, gain);
+}
+
 errno_t FairinoRobotSdkAdapter::GetActualJointPosDegree(uint8_t flag, JointPos* jpos) {
     return robot_.GetActualJointPosDegree(flag, jpos);
 }

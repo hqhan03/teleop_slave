@@ -54,7 +54,18 @@ DEFAULT_POSITIVE_FLEXION_JOINTS = {
     'rj_dg_2_2', 'rj_dg_2_3', 'rj_dg_2_4',
     'rj_dg_3_2', 'rj_dg_3_3', 'rj_dg_3_4',
     'rj_dg_4_2', 'rj_dg_4_3', 'rj_dg_4_4',
-    'rj_dg_5_3', 'rj_dg_5_4',
+    'rj_dg_5_2', 'rj_dg_5_3', 'rj_dg_5_4',
+}
+
+# Proximal-to-distal flexion joint chains for biomechanical curl coupling.
+# Enforces MCP >= PIP >= DIP so distal joints never flex more than proximal.
+# Thumb excluded (different kinematics). Pinky _1 is Z-axis abduction,
+# _2 is X-axis spread, so only _3/_4 (Y-axis flexion) participate.
+FLEXION_COUPLING_CHAINS = {
+    'index':  ('rj_dg_2_2', 'rj_dg_2_3', 'rj_dg_2_4'),
+    'middle': ('rj_dg_3_2', 'rj_dg_3_3', 'rj_dg_3_4'),
+    'ring':   ('rj_dg_4_2', 'rj_dg_4_3', 'rj_dg_4_4'),
+    'pinky':  ('rj_dg_5_3', 'rj_dg_5_4'),
 }
 
 
@@ -84,10 +95,12 @@ class DG5FIKSolver:
     def __init__(self, urdf_path: str, joint_damping: float = 0.1,
                  initial_joint_positions: np.ndarray | None = None,
                  prevent_hyperextension: bool = True,
-                 current_pose_weight: float = 0.35):
+                 current_pose_weight: float = 0.35,
+                 enforce_curl_coupling: bool = True):
         self._physics_client = p.connect(p.DIRECT)
         p.setAdditionalSearchPath(pybullet_data.getDataPath())
         self._current_pose_weight = float(np.clip(current_pose_weight, 0.0, 1.0))
+        self._enforce_curl_coupling = enforce_curl_coupling
 
         # Load URDF without meshes (faster, no package:// issues)
         stripped_urdf = _strip_meshes_from_urdf(urdf_path)
@@ -181,6 +194,17 @@ class DG5FIKSolver:
                 'tip_link_idx': tip_idx,
             }
 
+        # Pre-compute movable-space indices for curl coupling chains
+        self._coupling_movable_indices = {}
+        for finger_name, chain in FLEXION_COUPLING_CHAINS.items():
+            mis = []
+            for jname in chain:
+                pb_idx = self._joint_name_to_idx.get(jname)
+                if pb_idx is not None and pb_idx in self._pb_idx_to_movable:
+                    mis.append(self._pb_idx_to_movable[pb_idx])
+            if len(mis) >= 2:
+                self._coupling_movable_indices[finger_name] = mis
+
         # Current joint state in movable-joint space (warm-start for temporal smoothness)
         self._current_joints = np.copy(self._rest_poses)
         self._set_joint_positions(self._current_joints)
@@ -196,8 +220,8 @@ class DG5FIKSolver:
         state = p.getLinkState(self._robot_id, self._palm_link_idx,
                                computeForwardKinematics=True,
                                physicsClientId=self._physics_client)
-        palm_pos = np.array(state[0], dtype=float)
-        palm_rot = _quat_to_matrix(state[1])
+        palm_pos = np.array(state[4], dtype=float)
+        palm_rot = _quat_to_matrix(state[5])
         return palm_pos, palm_rot
 
     def _palm_to_world(self, pos_local: np.ndarray) -> np.ndarray:
@@ -207,6 +231,18 @@ class DG5FIKSolver:
     def _world_to_palm(self, pos_world: np.ndarray) -> np.ndarray:
         palm_pos, palm_rot = self._get_palm_pose()
         return palm_rot.T @ (pos_world - palm_pos)
+
+    def _apply_curl_coupling(self, result_joints: np.ndarray, finger_name: str):
+        """Enforce proximal-first curl: MCP >= PIP >= DIP for non-thumb fingers."""
+        mis = self._coupling_movable_indices.get(finger_name)
+        if mis is None:
+            return
+        # Walk distal-to-proximal: clamp each distal joint to not exceed its proximal neighbor
+        for i in range(len(mis) - 1, 0, -1):
+            distal_mi = mis[i]
+            proximal_mi = mis[i - 1]
+            if result_joints[distal_mi] > result_joints[proximal_mi]:
+                result_joints[distal_mi] = result_joints[proximal_mi]
 
     def solve(self, fingertip_targets: dict, enabled_fingers: dict = None) -> np.ndarray:
         """
@@ -265,6 +301,10 @@ class DG5FIKSolver:
             for mi in fdata['movable_indices']:
                 result_joints[mi] = ik_solution[mi]
 
+            # Enforce biomechanical curl coupling: MCP >= PIP >= DIP
+            if self._enforce_curl_coupling:
+                self._apply_curl_coupling(result_joints, finger_name)
+
             # Update simulation state for this finger before solving next
             for mi in fdata['movable_indices']:
                 pb_idx = self._movable_joint_indices[mi]
@@ -301,14 +341,11 @@ class DG5FIKSolver:
         state = p.getLinkState(self._robot_id, fdata['tip_link_idx'],
                                computeForwardKinematics=True,
                                physicsClientId=self._physics_client)
-        return self._world_to_palm(np.array(state[0], dtype=float))
+        return self._world_to_palm(np.array(state[4], dtype=float))
 
     def get_palm_fingertip_positions(self) -> dict:
         """Get all current fingertip positions in the DG-5F palm frame."""
-        positions = {}
-        for finger_name in FINGER_DEFS:
-            positions[finger_name] = self.get_fingertip_position(finger_name)
-        return positions
+        return {name: self.get_fingertip_position(name) for name in FINGER_DEFS}
 
     def get_palm_fingertip_positions_for_joint_positions(self, joint_positions_output_order) -> dict:
         """Evaluate DG-5F palm-local fingertips at an explicit 20-joint pose."""

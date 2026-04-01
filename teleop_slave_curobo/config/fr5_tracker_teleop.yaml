@@ -1,0 +1,65 @@
+fairino_slave_node:
+  ros__parameters:
+    orientation_mode: "position_only"
+    tracker_to_robot_axes: [1, 0, 2]
+    tracker_to_robot_signs: [1.0, -1.0, 1.0]
+    tracker_to_robot_rpy_deg: [36.8, -86.5, -81.3]
+    translation_scale_xyz: [1.0, 1.0, 1.0]
+    workspace_radius: 0.85
+    min_xyz: [-0.85, -0.85, 0.05]
+    max_xyz: [0.85, 0.85, 1.10]
+    max_linear_step_m: 0.015
+    max_angular_step_deg: 12.0
+    enable_kalman_position_filter: true
+    kalman_process_noise: 0.5
+    kalman_measurement_noise: 0.000025
+    filter_cutoff_hz: 8.0
+    filter_sample_rate_hz: 50.0
+    orientation_smoothing_alpha: 0.6
+    position_deadzone_m: 0.002
+
+fairino_lowlevel_controller_node:
+  ros__parameters:
+    robot_ip: "192.168.58.2"
+    stream_command_mode: "move_j"
+    servocart_mode: "incremental_base"
+    global_speed_percent: 30
+    expected_tcp_id: -1
+    expected_wobj_id: -1
+    ik_failure_limit: 5
+    ik_failure_timeout_sec: 0.75
+    allow_orientation_fallback: true
+    ik_position_backoff_steps: 4
+    pose_target_timeout_sec: 0.30
+    interpolate_stream: false
+    servo_cmd_period_sec: 0.02
+    pose_target_nominal_period_sec: 0.02
+    servocart_filter_t: 0.0
+    servocart_gain: 0.0
+    servoj_max_step_deg: 0.8
+    servoj_filter_t: 0.03
+    servoj_gain: 0.0
+    movej_cmd_period_sec: 0.08
+    movej_vel_percent: 100.0
+    movej_acc_percent: 100.0
+    movej_ovl_percent: 100.0
+    movej_blend_t_ms: 80.0
+    movej_command_deadband_deg: [0.5, 0.7, 0.7, 0.5, 0.5, 0.5]
+    servoj_output_deadband_deg: [0.25, 0.35, 0.35, 0.0, 0.0, 0.0]
+    enable_servoj_tracking_guard: true
+    servoj_tracking_error_hold_deg: [0.6, 1.2, 1.2, 0.0, 0.0, 0.0]
+    prefer_stream_target_for_ik_seed: true
+    enable_joint_debug_csv: true
+    joint_debug_csv_path: "/tmp/fairino_joint_debug.csv"
+    joint_debug_csv_decimation: 1
+    servoj_failure_limit: 3
+    enable_joint_continuity_guard: true
+    joint_continuity_guard_pose_step_mm: 8.0
+    joint_continuity_guard_orientation_step_deg: 10.0
+    joint_continuity_guard_jump_deg: [5.0, 5.0, 6.0, 0.0, 0.0, 0.0]
+    enable_joint_reversal_guard: true
+    joint_reversal_hold_cycles: 2
+    joint_deadband_deg: [0.12, 0.12, 0.12, 0.12, 0.12, 0.12]
+    joint_velocity_limit_deg_s: [35.0, 35.0, 40.0, 120.0, 120.0, 150.0]
+    joint_acceleration_limit_deg_s2: [800.0, 800.0, 1000.0, 3000.0, 3000.0, 4000.0]
+    joint_reversal_guard_step_deg: [0.9, 0.9, 1.2, 0.0, 0.0, 0.0]
